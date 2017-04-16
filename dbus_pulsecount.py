@@ -1,10 +1,15 @@
 import sys, os
+import signal
 from threading import Thread
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 
 from dbus.mainloop.glib import DBusGMainLoop
 import gobject
 from vedbus import VeDbusService
+from settingsdevice import SettingsDevice
+
+MAXCOUNT = 2**31-1
+SAVEINTERVAL = 60000
 
 def pulses(path):
     from select import epoll, EPOLLPRI, EPOLLERR
@@ -34,12 +39,19 @@ def main():
     dbusservice.add_path('/Frequency', value=0)
 
 
+    # Interface to settings, to store pulse count
+    supported_settings = {
+        'pulsecount': ['/Settings/PulseCount/0/Count', 0, 0, MAXCOUNT]
+    }
+    settings = SettingsDevice(dbusservice.dbusconn, supported_settings, lambda *args: None, timeout=10)
+    dbusservice['/Count'] = settings['pulsecount']
+
     def poll():
         from time import time
         stamps = [0] * 5
         idx = 0
         for _ in pulses('/dev/gpio/digital_input_1'):
-            dbusservice['/Count'] += 1
+            dbusservice['/Count'] = (dbusservice['/Count']+1) % MAXCOUNT
 
             now = time()
             stamps[idx] = now
@@ -54,7 +66,21 @@ def main():
     poller.daemon = True
     poller.start()
 
-    gobject.MainLoop().run()
+    # Periodically save the counter
+    def save_counter():
+        settings['pulsecount'] = dbusservice['/Count']
+        gobject.timeout_add(SAVEINTERVAL, save_counter)
+    gobject.timeout_add(SAVEINTERVAL, save_counter)
+
+    # Save counter on shutdown
+    signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
+
+    try:
+        gobject.MainLoop().run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        save_counter()
 
 if __name__ == "__main__":
     main()
