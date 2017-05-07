@@ -1,6 +1,9 @@
 import sys, os
 import signal
 from threading import Thread
+from select import select, epoll, EPOLLPRI
+from functools import partial
+import traceback
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 
 from dbus.mainloop.glib import DBusGMainLoop
@@ -10,84 +13,121 @@ from settingsdevice import SettingsDevice
 
 MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
+NUM_INPUTS = 5
 
-def pulses(path):
-    from select import epoll, EPOLLPRI, EPOLLERR
+class EpollPulseCounter(object):
+    def __init__(self, path):
+        self.path = path
+        self.fdmap = {}
+        self.gpiomap = {}
+        self.ob = epoll()
 
-    path = os.path.realpath(path)
+    def register(self, gpio):
+        path = os.path.join(self.path, 'digital_input_{}'.format(gpio))
+        path = os.path.realpath(path)
 
-    # Set up gpio for rising edge interrupts
-    with open(os.path.join(os.path.dirname(path), 'edge'), 'ab') as fp:
-        fp.write('rising')
+        # Set up gpio for rising edge interrupts
+        with open(os.path.join(os.path.dirname(path), 'edge'), 'ab') as fp:
+            fp.write('rising')
 
-    fp = open(path, 'rb')
-    ob = epoll()
-    ob.register(fp, EPOLLPRI | EPOLLERR)
-    while True: 
-        for fd, evt in ob.poll():
-            if evt == EPOLLERR:
-                raise IOError("poll failed")
-            fp.seek(0)
-            fp.read();
-            yield 1
+        fp = open(path, 'rb')
+        self.fdmap[fp.fileno()] = gpio
+        self.gpiomap[gpio] = fp
+        self.ob.register(fp, EPOLLPRI)
+
+    def unregister(self, gpio):
+        fp = self.gpiomap[gpio]
+        self.ob.unregister(fp)
+        del self.gpiomap[gpio]
+        del self.fdmap[fp.fileno()]
+        fp.close()
+
+    def __call__(self):
+        while True: 
+            for fd, evt in self.ob.poll(1):
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.read(fd, 1)
+                yield self.fdmap[fd]
+
 
 def main():
     DBusGMainLoop(set_as_default=True)
-    dbusservice = VeDbusService('com.victronenergy.pulsecount')
+    dbusservice = VeDbusService('com.victronenergy.digitalinput')
 
-    inputs = ['digital_input_{}'.format(i) for i in range(1, 3)]
+    inputs = range(1, NUM_INPUTS+1)
+    pulses = EpollPulseCounter('/dev/gpio') # callable that iterates over pulses
 
-    # Interface to settings, to store pulse count
-    supported_settings = {
-        inp: ['/Settings/PulseCount/{}/Count'.format(inp), 0, 0, MAXCOUNT] for inp in inputs
-    }
-    counts = SettingsDevice(dbusservice.dbusconn, supported_settings, lambda *args: None, timeout=10)
+    def register_gpio(gpio):
+        dbusservice.add_path('/{}/Count'.format(gpio), value=0)
+        dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
+        pulses.register(gpio)
 
-    def poll(gpio):
-        from time import time
-        path = os.path.join('/dev/gpio', gpio)
-        stamps = [0] * 5
-        idx = 0
-        for _ in pulses(path):
-            countpath = '/{}/Count'.format(gpio)
-            dbusservice[countpath] = (dbusservice[countpath]+1) % MAXCOUNT
+    def unregister_gpio(gpio):
+        pulses.unregister(gpio)
+        del dbusservice['/{}/Count'.format(gpio)]
 
-            now = time()
-            stamps[idx] = now
-            idx = (idx+1) % len(stamps)
+    # Interface to settings
+    def handle_setting_change(inp, setting, old, new):
+        if setting == 'function':
+            if new:
+                # Input enabled
+                register_gpio(inp)
+            else:
+                # Input disabled
+                unregister_gpio(inp)
 
-            dbusservice['/{}/Frequency'.format(gpio)] = round((len(stamps)-1)/(now-min(stamps)), 2)
-
-    # Need to run the gpio polling in separate threads. This will be done
-    # using epoll(), so it will be very efficient.
-    gobject.threads_init()
-
+    settings = {}
     for inp in inputs:
-        dbusservice.add_path('/{}/Count'.format(inp), value=0)
-        dbusservice.add_path('/{}/Frequency'.format(inp), value=0)
-        dbusservice['/{}/Count'.format(inp)] = counts[inp]
+        supported_settings = {
+            'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
+            'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1]
+        }
+        settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
+        if sd['function'] > 0:
+            register_gpio(inp)
 
-        poller = Thread(target=lambda: poll(inp))
-        poller.daemon = True
-        poller.start()
+    def poll(mainloop):
+        from time import time
+        #stamps = { inp: [0] * 5 for inp in gpios }
+        idx = 0
+
+        try:
+            for inp in pulses():
+                countpath = '/{}/Count'.format(inp)
+                dbusservice[countpath] = (dbusservice[countpath]+1) % MAXCOUNT
+        except:
+            traceback.print_exc()
+            mainloop.quit()
+
+    # Need to run the gpio polling in separate thread. Pass in the mainloop so
+    # the thread can kill us if there is an exception.
+    gobject.threads_init()
+    mainloop = gobject.MainLoop()
+
+    poller = Thread(target=lambda: poll(mainloop))
+    poller.daemon = True
+    poller.start()
 
     # Periodically save the counter
-    def save_counter():
+    def _save_counters():
         for inp in inputs:
-            counts[inp] = dbusservice['/{}/Count'.format(inp)]
-        gobject.timeout_add(SAVEINTERVAL, save_counter)
-    gobject.timeout_add(SAVEINTERVAL, save_counter)
+            if settings[inp]['function'] > 0:
+                settings[inp]['count'] = dbusservice['/{}/Count'.format(inp)]
+
+    def save_counters():
+        _save_counters()
+        gobject.timeout_add(SAVEINTERVAL, save_counters)
+    gobject.timeout_add(SAVEINTERVAL, save_counters)
 
     # Save counter on shutdown
     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
 
     try:
-        gobject.MainLoop().run()
+        mainloop.run()
     except KeyboardInterrupt:
         pass
     finally:
-        for inp in inputs:
-            counts[inp] = dbusservice['/{}/Count'.format(inp)]
+        _save_counters()
 
 if __name__ == "__main__":
     main()
