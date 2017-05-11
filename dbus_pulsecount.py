@@ -59,12 +59,15 @@ def main():
 
     def register_gpio(gpio):
         dbusservice.add_path('/{}/Count'.format(gpio), value=0)
+        dbusservice.add_path('/{}/Volume'.format(gpio), value=0)
         dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
+        dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         pulses.register(gpio)
 
     def unregister_gpio(gpio):
         pulses.unregister(gpio)
         del dbusservice['/{}/Count'.format(gpio)]
+        del dbusservice['/{}/Volume'.format(gpio)]
 
     # Interface to settings
     def handle_setting_change(inp, setting, old, new):
@@ -80,6 +83,7 @@ def main():
     for inp in inputs:
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
+            'rate': ['/Settings/DigitalInput/{}/LitersPerPulse'.format(inp), 1, 1, 100],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1]
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
@@ -94,7 +98,9 @@ def main():
         try:
             for inp in pulses():
                 countpath = '/{}/Count'.format(inp)
-                dbusservice[countpath] = (dbusservice[countpath]+1) % MAXCOUNT
+                v = (dbusservice[countpath]+1) % MAXCOUNT
+                dbusservice[countpath] = v
+                dbusservice['/{}/Volume'.format(inp)] = v * settings[inp]['rate']
         except:
             traceback.print_exc()
             mainloop.quit()
