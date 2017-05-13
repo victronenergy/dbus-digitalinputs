@@ -1,3 +1,5 @@
+#!/usr/bin/python -u
+
 import sys, os
 import signal
 from threading import Thread
