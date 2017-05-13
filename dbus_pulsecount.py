@@ -96,7 +96,7 @@ def main():
                 if pulses.registered(inp):
                     unregister_gpio(inp)
                 register_gpio(inp, int(new))
-            else:
+            elif old:
                 # Input disabled
                 unregister_gpio(inp)
 
