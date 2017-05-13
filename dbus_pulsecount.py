@@ -15,6 +15,9 @@ MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
 NUM_INPUTS = 5
 
+INPUT_FUNCTION_COUNTER = 1
+INPUT_FUNCTION_ALARM = 2
+
 class EpollPulseCounter(object):
     def __init__(self, path):
         self.path = path
@@ -28,7 +31,7 @@ class EpollPulseCounter(object):
 
         # Set up gpio for rising edge interrupts
         with open(os.path.join(os.path.dirname(path), 'edge'), 'ab') as fp:
-            fp.write('rising')
+            fp.write('both')
 
         fp = open(path, 'rb')
         self.fdmap[fp.fileno()] = gpio
@@ -42,12 +45,19 @@ class EpollPulseCounter(object):
         del self.fdmap[fp.fileno()]
         fp.close()
 
+    def registered(self, gpio):
+        return gpio in self.gpiomap
+
     def __call__(self):
         while True: 
+            # We have a timeout of 1 second on the poll, because poll() only
+            # looks at files in the epoll object at the time poll() was called.
+            # The timeout means we let other files (added via calls to
+            # register/unregister) into the loop at least that often.
             for fd, evt in self.ob.poll(1):
                 os.lseek(fd, 0, os.SEEK_SET)
-                os.read(fd, 1)
-                yield self.fdmap[fd]
+                v = os.read(fd, 1)
+                yield self.fdmap[fd], int(v)
 
 
 def main():
@@ -57,24 +67,33 @@ def main():
     inputs = range(1, NUM_INPUTS+1)
     pulses = EpollPulseCounter('/dev/gpio') # callable that iterates over pulses
 
-    def register_gpio(gpio):
-        dbusservice.add_path('/{}/Count'.format(gpio), value=0)
-        dbusservice.add_path('/{}/Volume'.format(gpio), value=0)
-        dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
-        dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
+    def register_gpio(gpio, f):
+        print "Registering GPIO {} for function {}".format(gpio, f)
+        dbusservice.add_path('/Count/{}'.format(gpio), value=0)
+        dbusservice['/Count/{}'.format(gpio)] = settings[gpio]['count']
+        if f == INPUT_FUNCTION_COUNTER:
+            dbusservice.add_path('/Volume/{}'.format(gpio), value=0)
+            dbusservice['/Volume/{}'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
+        elif f == INPUT_FUNCTION_ALARM:
+            dbusservice.add_path('/Alarms/{}'.format(gpio), value=0)
         pulses.register(gpio)
 
     def unregister_gpio(gpio):
+        print "unRegistering GPIO {}".format(gpio)
         pulses.unregister(gpio)
-        del dbusservice['/{}/Count'.format(gpio)]
-        del dbusservice['/{}/Volume'.format(gpio)]
+        for pth in ('Count', 'Volume', 'Alarms'):
+            k = '/{}/{}'.format(pth, gpio)
+            if k in dbusservice:
+                del dbusservice[k]
 
     # Interface to settings
     def handle_setting_change(inp, setting, old, new):
         if setting == 'function':
             if new:
-                # Input enabled
-                register_gpio(inp)
+                # Input enabled. If already enabled, unregister the old one first.
+                if pulses.registered(inp):
+                    unregister_gpio(inp)
+                register_gpio(inp, int(new))
             else:
                 # Input disabled
                 unregister_gpio(inp)
@@ -88,7 +107,7 @@ def main():
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
-            register_gpio(inp)
+            register_gpio(inp, int(sd['function']))
 
     def poll(mainloop):
         from time import time
@@ -96,11 +115,19 @@ def main():
         idx = 0
 
         try:
-            for inp in pulses():
-                countpath = '/{}/Count'.format(inp)
-                v = (dbusservice[countpath]+1) % MAXCOUNT
-                dbusservice[countpath] = v
-                dbusservice['/{}/Volume'.format(inp)] = v * settings[inp]['rate']
+            for inp, level in pulses():
+                function = settings[inp]['function']
+
+                # Only increment Count on rising edge.
+                if level:
+                    countpath = '/Count/{}'.format(inp)
+                    v = (dbusservice[countpath]+1) % MAXCOUNT
+                    dbusservice[countpath] = v
+                    if function == INPUT_FUNCTION_COUNTER:
+                        dbusservice['/Volume/{}'.format(inp)] = v * settings[inp]['rate']
+
+                if function == INPUT_FUNCTION_ALARM:
+                    dbusservice['/Alarms/{}'.format(inp)] = bool(level)*2 # Nasty way of limiting to 0 or 2.
         except:
             traceback.print_exc()
             mainloop.quit()
@@ -118,7 +145,7 @@ def main():
     def _save_counters():
         for inp in inputs:
             if settings[inp]['function'] > 0:
-                settings[inp]['count'] = dbusservice['/{}/Count'.format(inp)]
+                settings[inp]['count'] = dbusservice['/Count/{}'.format(inp)]
 
     def save_counters():
         _save_counters()
