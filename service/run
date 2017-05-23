@@ -1,3 +1,3 @@
 #!/bin/sh
 exec 2>&1
-exec /opt/victronenergy/dbus-pulsecount/dbus_pulsecount.py
+exec /opt/victronenergy/dbus-pulsecount/dbus_pulsecount.py /dev/gpio/digital_input_*
