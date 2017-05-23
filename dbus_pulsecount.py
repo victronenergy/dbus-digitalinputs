@@ -16,7 +16,6 @@ from settingsdevice import SettingsDevice
 
 MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
-NUM_INPUTS = 5
 
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_ALARM = 2
