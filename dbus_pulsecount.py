@@ -5,6 +5,7 @@ import signal
 from threading import Thread
 from select import select, epoll, EPOLLPRI
 from functools import partial
+from argparse import ArgumentParser
 import traceback
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 
@@ -21,14 +22,12 @@ INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_ALARM = 2
 
 class EpollPulseCounter(object):
-    def __init__(self, path):
-        self.path = path
+    def __init__(self):
         self.fdmap = {}
         self.gpiomap = {}
         self.ob = epoll()
 
-    def register(self, gpio):
-        path = os.path.join(self.path, 'digital_input_{}'.format(gpio))
+    def register(self, path, gpio):
         path = os.path.realpath(path)
 
         # Set up gpio for rising edge interrupts
@@ -63,13 +62,17 @@ class EpollPulseCounter(object):
 
 
 def main():
+    parser = ArgumentParser(description=sys.argv[0])
+    parser.add_argument('inputs', nargs='+', help='Path to digital input')
+    args = parser.parse_args()
+
     DBusGMainLoop(set_as_default=True)
     dbusservice = VeDbusService('com.victronenergy.digitalinput')
 
-    inputs = range(1, NUM_INPUTS+1)
-    pulses = EpollPulseCounter('/dev/gpio') # callable that iterates over pulses
+    inputs = dict(enumerate(args.inputs, 1))
+    pulses = EpollPulseCounter() # callable that iterates over pulses
 
-    def register_gpio(gpio, f):
+    def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
         dbusservice.add_path('/Count/{}'.format(gpio), value=0)
         dbusservice['/Count/{}'.format(gpio)] = settings[gpio]['count']
@@ -78,7 +81,7 @@ def main():
             dbusservice['/Volume/{}'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
             dbusservice.add_path('/Alarms/{}'.format(gpio), value=0)
-        pulses.register(gpio)
+        pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
@@ -95,13 +98,13 @@ def main():
                 # Input enabled. If already enabled, unregister the old one first.
                 if pulses.registered(inp):
                     unregister_gpio(inp)
-                register_gpio(inp, int(new))
+                register_gpio(inputs[inp], inp, int(new))
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
 
     settings = {}
-    for inp in inputs:
+    for inp, pth in inputs.items():
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
             'rate': ['/Settings/DigitalInput/{}/LitersPerPulse'.format(inp), 1, 1, 100],
@@ -109,7 +112,7 @@ def main():
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
-            register_gpio(inp, int(sd['function']))
+            register_gpio(pth, inp, int(sd['function']))
 
     def poll(mainloop):
         from time import time
