@@ -20,6 +20,14 @@ SAVEINTERVAL = 60000
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_ALARM = 2
 
+# TODO, i18n?
+UNITS = [
+    u'l',
+    unichr(0x33a5), # cubic meter
+    u'KWh',
+]
+MAXUNIT = len(UNITS)
+
 class EpollPulseCounter(object):
     def __init__(self):
         self.fdmap = {}
@@ -70,13 +78,22 @@ def main():
 
     inputs = dict(enumerate(args.inputs, 1))
     pulses = EpollPulseCounter() # callable that iterates over pulses
+    settings = {}
+
+    def get_volume_text(gpio, path, value):
+        try:
+            unit = UNITS[settings[gpio]['unit']]
+        except IndexError:
+            return str(value)
+        return str(value) + ' ' + unit
 
     def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
         dbusservice.add_path('/{}/Count'.format(gpio), value=0)
         dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
         if f == INPUT_FUNCTION_COUNTER:
-            dbusservice.add_path('/{}/Volume'.format(gpio), value=0)
+            dbusservice.add_path('/{}/Volume'.format(gpio), value=0,
+                gettextcallback=partial(get_volume_text, gpio))
             dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
             dbusservice.add_path('/{}/Alarm'.format(gpio), value=0)
@@ -102,12 +119,12 @@ def main():
                 # Input disabled
                 unregister_gpio(inp)
 
-    settings = {}
     for inp, pth in inputs.items():
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
             'rate': ['/Settings/DigitalInput/{}/LitersPerPulse'.format(inp), 1, 1, 100],
-            'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1]
+            'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
+            'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT]
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
