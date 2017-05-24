@@ -73,20 +73,20 @@ def main():
 
     def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
-        dbusservice.add_path('/Count/{}'.format(gpio), value=0)
-        dbusservice['/Count/{}'.format(gpio)] = settings[gpio]['count']
+        dbusservice.add_path('/{}/Count'.format(gpio), value=0)
+        dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
         if f == INPUT_FUNCTION_COUNTER:
-            dbusservice.add_path('/Volume/{}'.format(gpio), value=0)
-            dbusservice['/Volume/{}'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
+            dbusservice.add_path('/{}/Volume'.format(gpio), value=0)
+            dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
-            dbusservice.add_path('/Alarms/{}'.format(gpio), value=0)
+            dbusservice.add_path('/{}/Alarm'.format(gpio), value=0)
         pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
         pulses.unregister(gpio)
-        for pth in ('Count', 'Volume', 'Alarms'):
-            k = '/{}/{}'.format(pth, gpio)
+        for pth in ('Count', 'Volume', 'Alarm'):
+            k = '/{}/{}'.format(gpio, pth)
             if k in dbusservice:
                 del dbusservice[k]
 
@@ -124,14 +124,14 @@ def main():
 
                 # Only increment Count on rising edge.
                 if level:
-                    countpath = '/Count/{}'.format(inp)
+                    countpath = '/{}/Count'.format(inp)
                     v = (dbusservice[countpath]+1) % MAXCOUNT
                     dbusservice[countpath] = v
                     if function == INPUT_FUNCTION_COUNTER:
-                        dbusservice['/Volume/{}'.format(inp)] = v * settings[inp]['rate']
+                        dbusservice['/{}/Volume'.format(inp)] = v * settings[inp]['rate']
 
                 if function == INPUT_FUNCTION_ALARM:
-                    dbusservice['/Alarms/{}'.format(inp)] = bool(level)*2 # Nasty way of limiting to 0 or 2.
+                    dbusservice['/{}/Alarm'.format(inp)] = bool(level)*2 # Nasty way of limiting to 0 or 2.
         except:
             traceback.print_exc()
             mainloop.quit()
@@ -149,7 +149,7 @@ def main():
     def _save_counters():
         for inp in inputs:
             if settings[inp]['function'] > 0:
-                settings[inp]['count'] = dbusservice['/Count/{}'.format(inp)]
+                settings[inp]['count'] = dbusservice['/{}/Count'.format(inp)]
 
     def save_counters():
         _save_counters()
