@@ -96,7 +96,7 @@ def main():
                 gettextcallback=partial(get_volume_text, gpio))
             dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
-            dbusservice.add_path('/{}/Alarm'.format(gpio), value=0)
+            dbusservice.add_path('/{}/Alarm'.format(gpio), value=settings[gpio]['invert'])
         pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
@@ -124,7 +124,8 @@ def main():
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
             'rate': ['/Settings/DigitalInput/{}/LitersPerPulse'.format(inp), 1, 1, 100],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT]
+            'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT],
+            'invert': ['/Settings/DigitalInput/{}/Invert'.format(inp), 0, 0, 1]
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
@@ -138,6 +139,8 @@ def main():
         try:
             for inp, level in pulses():
                 function = settings[inp]['function']
+                invert = bool(settings[inp]['invert'])
+                level ^= invert
 
                 # Only increment Count on rising edge.
                 if level:
