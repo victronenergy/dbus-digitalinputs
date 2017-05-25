@@ -93,9 +93,9 @@ def main():
         dbusservice.add_path('/{}/Count'.format(gpio), value=0)
         dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
         if f == INPUT_FUNCTION_COUNTER:
-            dbusservice.add_path('/{}/Volume'.format(gpio), value=0,
+            dbusservice.add_path('/{}/Aggregate'.format(gpio), value=0,
                 gettextcallback=partial(get_volume_text, gpio))
-            dbusservice['/{}/Volume'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
+            dbusservice['/{}/Aggregate'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
             dbusservice.add_path('/{}/Alarm'.format(gpio), value=settings[gpio]['invert'])
         pulses.register(path, gpio)
@@ -103,7 +103,7 @@ def main():
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
         pulses.unregister(gpio)
-        for pth in ('Count', 'Volume', 'Alarm'):
+        for pth in ('Count', 'Aggregate', 'Alarm'):
             k = '/{}/{}'.format(gpio, pth)
             if k in dbusservice:
                 del dbusservice[k]
@@ -123,10 +123,10 @@ def main():
     for inp, pth in inputs.items():
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
-            'rate': ['/Settings/DigitalInput/{}/LitersPerPulse'.format(inp), 1, 1, 100],
+            'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 1, 1, 100],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT],
-            'invert': ['/Settings/DigitalInput/{}/Invert'.format(inp), 0, 0, 1]
+            'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1]
         }
         settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
@@ -149,7 +149,7 @@ def main():
                     v = (dbusservice[countpath]+1) % MAXCOUNT
                     dbusservice[countpath] = v
                     if function == INPUT_FUNCTION_COUNTER:
-                        dbusservice['/{}/Volume'.format(inp)] = v * settings[inp]['rate']
+                        dbusservice['/{}/Aggregate'.format(inp)] = v * settings[inp]['rate']
 
                 if function == INPUT_FUNCTION_ALARM:
                     dbusservice['/{}/Alarm'.format(inp)] = bool(level)*2 # Nasty way of limiting to 0 or 2.
