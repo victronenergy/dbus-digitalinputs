@@ -42,6 +42,7 @@ class EpollPulseCounter(object):
             fp.write('both')
 
         fp = open(path, 'rb')
+        fp.read() # flush it in case it's high at startup
         self.fdmap[fp.fileno()] = gpio
         self.gpiomap[gpio] = fp
         self.ob.register(fp, EPOLLPRI)
