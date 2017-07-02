@@ -167,14 +167,11 @@ def main():
     poller.start()
 
     # Periodically save the counter
-    def _save_counters():
+    def save_counters():
         for inp in inputs:
             if settings[inp]['function'] > 0:
                 settings[inp]['count'] = dbusservice['/{}/Count'.format(inp)]
-
-    def save_counters():
-        _save_counters()
-        gobject.timeout_add(SAVEINTERVAL, save_counters)
+        return True
     gobject.timeout_add(SAVEINTERVAL, save_counters)
 
     # Save counter on shutdown
@@ -185,7 +182,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        _save_counters()
+        save_counters()
 
 if __name__ == "__main__":
     main()
