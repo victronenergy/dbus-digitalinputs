@@ -23,8 +23,7 @@ INPUT_FUNCTION_ALARM = 2
 # TODO, i18n?
 UNITS = [
     u'l',
-    unichr(0x33a5), # cubic meter
-    u'KWh',
+    unichr(0x33a5) # cubic meter
 ]
 MAXUNIT = len(UNITS)
 
