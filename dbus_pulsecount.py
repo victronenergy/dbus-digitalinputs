@@ -10,6 +10,7 @@ import traceback
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 
 from dbus.mainloop.glib import DBusGMainLoop
+from dbus import SessionBus, SystemBus
 import gobject
 from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
@@ -26,6 +27,28 @@ UNITS = [
     unichr(0x33a5) # cubic meter
 ]
 MAXUNIT = len(UNITS)
+
+class DebugPulseCounter(object):
+    def __init__(self):
+        self.gpiomap = {}
+
+    def register(self, path, gpio):
+        self.gpiomap[gpio] = None
+
+    def unregister(self, gpio):
+        del self.gpiomap[gpio]
+
+    def registered(self, gpio):
+        return gpio in self.gpiomap
+
+    def __call__(self):
+        from itertools import cycle
+        from time import sleep
+        for level in cycle([0, 1]):
+            gpios = self.gpiomap.keys()
+            for gpio in gpios:
+                yield gpio, level
+                sleep(0.25/len(self.gpiomap))
 
 class EpollPulseCounter(object):
     def __init__(self):
@@ -67,17 +90,32 @@ class EpollPulseCounter(object):
                 v = os.read(fd, 1)
                 yield self.fdmap[fd], int(v)
 
+def dbusconnection():
+    # dbus already ensures singleton-behaviour
+    return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
 
 def main():
     parser = ArgumentParser(description=sys.argv[0])
+    parser.add_argument('--servicebase',
+        help='Base service name on dbus, default is com.victronenergy.watermeter',
+        default='com.victronenergy.watermeter')
+    parser.add_argument('--debug',
+        help='Enable debug counter, this ignores the real gpios and simulates input',
+        default=False, action="store_true")
     parser.add_argument('inputs', nargs='+', help='Path to digital input')
     args = parser.parse_args()
 
+    if args.debug:
+        PulseCounter = DebugPulseCounter
+    else:
+        PulseCounter = EpollPulseCounter
+
     DBusGMainLoop(set_as_default=True)
-    dbusservice = VeDbusService('com.victronenergy.digitalinput')
+
+    dbusservice = VeDbusService(args.servicebase)
 
     inputs = dict(enumerate(args.inputs, 1))
-    pulses = EpollPulseCounter() # callable that iterates over pulses
+    pulses = PulseCounter() # callable that iterates over pulses
     settings = {}
 
     def get_volume_text(gpio, path, value):
@@ -127,7 +165,7 @@ def main():
             'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT],
             'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1]
         }
-        settings[inp] = sd = SettingsDevice(dbusservice.dbusconn, supported_settings, partial(handle_setting_change, inp), timeout=10)
+        settings[inp] = sd = SettingsDevice(dbusconnection(), supported_settings, partial(handle_setting_change, inp), timeout=10)
         if sd['function'] > 0:
             register_gpio(pth, inp, int(sd['function']))
 
