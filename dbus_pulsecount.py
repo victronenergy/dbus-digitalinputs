@@ -21,6 +21,11 @@ SAVEINTERVAL = 60000
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_ALARM = 2
 
+TYPES = {
+    INPUT_FUNCTION_COUNTER: 'watermeter',
+    INPUT_FUNCTION_ALARM: 'alarm',
+}
+
 # TODO, i18n?
 UNITS = [
     u'l',
@@ -28,7 +33,10 @@ UNITS = [
 ]
 MAXUNIT = len(UNITS)
 
-class DebugPulseCounter(object):
+class BasePulseCounter(object):
+    pass
+
+class DebugPulseCounter(BasePulseCounter):
     def __init__(self):
         self.gpiomap = {}
 
@@ -50,7 +58,7 @@ class DebugPulseCounter(object):
                 yield gpio, level
                 sleep(0.25/len(self.gpiomap))
 
-class EpollPulseCounter(object):
+class EpollPulseCounter(BasePulseCounter):
     def __init__(self):
         self.fdmap = {}
         self.gpiomap = {}
@@ -97,8 +105,8 @@ def dbusconnection():
 def main():
     parser = ArgumentParser(description=sys.argv[0])
     parser.add_argument('--servicebase',
-        help='Base service name on dbus, default is com.victronenergy.watermeter',
-        default='com.victronenergy.watermeter')
+        help='Base service name on dbus, default is com.victronenergy',
+        default='com.victronenergy')
     parser.add_argument('--debug',
         help='Enable debug counter, this ignores the real gpios and simulates input',
         default=False, action="store_true")
@@ -112,8 +120,8 @@ def main():
 
     DBusGMainLoop(set_as_default=True)
 
-    dbusservice = VeDbusService(args.servicebase)
-
+    # Keep track of enabled services
+    services = {}
     inputs = dict(enumerate(args.inputs, 1))
     pulses = PulseCounter() # callable that iterates over pulses
     settings = {}
@@ -127,23 +135,25 @@ def main():
 
     def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
-        dbusservice.add_path('/{}/Count'.format(gpio), value=0)
-        dbusservice['/{}/Count'.format(gpio)] = settings[gpio]['count']
+
+        services[gpio] = dbusservice = VeDbusService(
+            "{}.{}.inp_{}".format(args.servicebase, TYPES[f], gpio))
+
+        dbusservice.add_path('/Count', value=0)
+        dbusservice['/Count'] = settings[gpio]['count']
         if f == INPUT_FUNCTION_COUNTER:
-            dbusservice.add_path('/{}/Aggregate'.format(gpio), value=0,
+            dbusservice.add_path('/Aggregate', value=0,
                 gettextcallback=partial(get_volume_text, gpio))
-            dbusservice['/{}/Aggregate'.format(gpio)] = settings[gpio]['count'] * settings[gpio]['rate']
+            dbusservice['/Aggregate'] = settings[gpio]['count'] * settings[gpio]['rate']
         elif f == INPUT_FUNCTION_ALARM:
-            dbusservice.add_path('/{}/Alarm'.format(gpio), value=settings[gpio]['invert'])
+            dbusservice.add_path('/Alarm', value=settings[gpio]['invert'])
         pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
         pulses.unregister(gpio)
-        for pth in ('Count', 'Aggregate', 'Alarm'):
-            k = '/{}/{}'.format(gpio, pth)
-            if k in dbusservice:
-                del dbusservice[k]
+        services[gpio].__del__()
+        del services[gpio]
 
     # Interface to settings
     def handle_setting_change(inp, setting, old, new):
@@ -179,17 +189,18 @@ def main():
                 function = settings[inp]['function']
                 invert = bool(settings[inp]['invert'])
                 level ^= invert
+                dbusservice = services[inp]
 
                 # Only increment Count on rising edge.
                 if level:
-                    countpath = '/{}/Count'.format(inp)
+                    countpath = '/Count'
                     v = (dbusservice[countpath]+1) % MAXCOUNT
                     dbusservice[countpath] = v
                     if function == INPUT_FUNCTION_COUNTER:
-                        dbusservice['/{}/Aggregate'.format(inp)] = v * settings[inp]['rate']
+                        dbusservice['/Aggregate'] = v * settings[inp]['rate']
 
                 if function == INPUT_FUNCTION_ALARM:
-                    dbusservice['/{}/Alarm'.format(inp)] = bool(level)*2 # Nasty way of limiting to 0 or 2.
+                    dbusservice['/Alarm'] = bool(level)*2 # Nasty way of limiting to 0 or 2.
         except:
             traceback.print_exc()
             mainloop.quit()
@@ -207,7 +218,7 @@ def main():
     def save_counters():
         for inp in inputs:
             if settings[inp]['function'] > 0:
-                settings[inp]['count'] = dbusservice['/{}/Count'.format(inp)]
+                settings[inp]['count'] = services[inp]['/Count']
         return True
     gobject.timeout_add(SAVEINTERVAL, save_counters)
 
