@@ -10,7 +10,7 @@ import traceback
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 
 from dbus.mainloop.glib import DBusGMainLoop
-from dbus import SessionBus, SystemBus
+import dbus
 import gobject
 from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
@@ -32,6 +32,14 @@ UNITS = [
     unichr(0x33a5) # cubic meter
 ]
 MAXUNIT = len(UNITS)
+
+class SystemBus(dbus.bus.BusConnection):
+	def __new__(cls):
+		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
+
+class SessionBus(dbus.bus.BusConnection):
+	def __new__(cls):
+		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
 class BasePulseCounter(object):
     pass
@@ -137,7 +145,7 @@ def main():
         print "Registering GPIO {} for function {}".format(gpio, f)
 
         services[gpio] = dbusservice = VeDbusService(
-            "{}.{}.inp_{}".format(args.servicebase, TYPES[f], gpio))
+            "{}.{}.inp_{}".format(args.servicebase, TYPES[f], gpio), bus=dbusconnection())
 
         dbusservice.add_path('/Count', value=0)
         dbusservice['/Count'] = settings[gpio]['count']
@@ -186,10 +194,15 @@ def main():
 
         try:
             for inp, level in pulses():
+                # epoll object only resyncs once a second. We may receive
+                # a pulse for something that's been deregistered.
+                try:
+                    dbusservice = services[inp]
+                except KeyError:
+                    continue
                 function = settings[inp]['function']
                 invert = bool(settings[inp]['invert'])
                 level ^= invert
-                dbusservice = services[inp]
 
                 # Only increment Count on rising edge.
                 if level:
