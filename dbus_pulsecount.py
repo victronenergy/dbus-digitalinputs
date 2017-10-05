@@ -5,6 +5,7 @@ import signal
 from threading import Thread
 from select import select, epoll, EPOLLPRI
 from functools import partial
+from collections import namedtuple
 from argparse import ArgumentParser
 import traceback
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
@@ -15,15 +16,18 @@ import gobject
 from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
 
+VERSION = '0.1'
 MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
 
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_ALARM = 2
 
+Product = namedtuple('Point', ['id', 'name'])
+
 TYPES = {
-    INPUT_FUNCTION_COUNTER: 'watermeter',
-    INPUT_FUNCTION_ALARM: 'alarm',
+    INPUT_FUNCTION_COUNTER: Product('watermeter', 'Pulse water meter'),
+    INPUT_FUNCTION_ALARM: Product('alarm', 'Digital alarm signal'),
 }
 
 # TODO, i18n?
@@ -145,7 +149,16 @@ def main():
         print "Registering GPIO {} for function {}".format(gpio, f)
 
         services[gpio] = dbusservice = VeDbusService(
-            "{}.{}.inp_{}".format(args.servicebase, TYPES[f], gpio), bus=dbusconnection())
+            "{}.{}.inp_{}".format(args.servicebase, TYPES[f].id, gpio), bus=dbusconnection())
+
+        # Add objects required by ve-api
+        dbusservice.add_path('/Mgmt/ProcessName', __file__)
+        dbusservice.add_path('/Mgmt/ProcessVersion', VERSION)
+        dbusservice.add_path('/Mgmt/Connection', path)
+        dbusservice.add_path('/DeviceInstance', gpio)
+        dbusservice.add_path('/ProductId', 0xFFFF) # None set, FIXME?
+        dbusservice.add_path('/ProductName', TYPES[f].name) #FIXME
+        dbusservice.add_path('/Connected', 1)
 
         dbusservice.add_path('/Count', value=0)
         dbusservice['/Count'] = settings[gpio]['count']
