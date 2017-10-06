@@ -21,14 +21,25 @@ MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
 
 INPUT_FUNCTION_COUNTER = 1
-INPUT_FUNCTION_ALARM = 2
+INPUT_FUNCTION_INPUT = 2
 
-Product = namedtuple('Point', ['id', 'name'])
+Product = namedtuple('Point', ['id', 'name', 'product'])
 
-TYPES = {
-    INPUT_FUNCTION_COUNTER: Product('watermeter', 'Pulse water meter'),
-    INPUT_FUNCTION_ALARM: Product('alarm', 'Digital alarm signal'),
+FUNCTIONS = {
+    INPUT_FUNCTION_COUNTER: Product('pulsemeter', 'Pulse meter', 0xA163),
+    INPUT_FUNCTION_INPUT: Product('digitalinput', 'Digital input', 0xA164),
 }
+
+# Only append at the end
+INPUTTYPES = [
+    'Door alarm',
+    'Bilge alarm',
+    'Burglar alarm',
+    'Smoke alarm',
+    'Fire alarm',
+    'CO2 alarm'
+]
+MAXTYPE = len(INPUTTYPES)
 
 # TODO, i18n?
 UNITS = [
@@ -148,16 +159,17 @@ def main():
     def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
 
+        function = FUNCTIONS[f]
         services[gpio] = dbusservice = VeDbusService(
-            "{}.{}.inp_{}".format(args.servicebase, TYPES[f].id, gpio), bus=dbusconnection())
+            "{}.{}.input{:02d}".format(args.servicebase, function.id, gpio), bus=dbusconnection())
 
         # Add objects required by ve-api
         dbusservice.add_path('/Management/ProcessName', __file__)
         dbusservice.add_path('/Management/ProcessVersion', VERSION)
         dbusservice.add_path('/Management/Connection', path)
         dbusservice.add_path('/DeviceInstance', gpio)
-        dbusservice.add_path('/ProductId', 0xFFFF) # None set, FIXME?
-        dbusservice.add_path('/ProductName', TYPES[f].name) #FIXME
+        dbusservice.add_path('/ProductId', function.product) # None set, FIXME?
+        dbusservice.add_path('/ProductName', function.name)
         dbusservice.add_path('/Connected', 1)
 
         dbusservice.add_path('/Count', value=0)
@@ -166,8 +178,10 @@ def main():
             dbusservice.add_path('/Aggregate', value=0,
                 gettextcallback=partial(get_volume_text, gpio))
             dbusservice['/Aggregate'] = settings[gpio]['count'] * settings[gpio]['rate']
-        elif f == INPUT_FUNCTION_ALARM:
-            dbusservice.add_path('/Alarm', value=settings[gpio]['invert'])
+        elif f == INPUT_FUNCTION_INPUT:
+            dbusservice.add_path('/State', value=settings[gpio]['invert'])
+            dbusservice.add_path('/Type',
+                value=INPUTTYPES[min(settings[gpio]['inputtype'], MAXTYPE-1)])
         pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
@@ -187,10 +201,13 @@ def main():
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
+        elif setting == 'inputtype':
+            services[inp]['/Type'] = INPUTTYPES[min(int(new), MAXTYPE-1)]
 
     for inp, pth in inputs.items():
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
+            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, MAXTYPE, 1],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 1, 1, 100],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT],
@@ -225,8 +242,8 @@ def main():
                     if function == INPUT_FUNCTION_COUNTER:
                         dbusservice['/Aggregate'] = v * settings[inp]['rate']
 
-                if function == INPUT_FUNCTION_ALARM:
-                    dbusservice['/Alarm'] = bool(level)*2 # Nasty way of limiting to 0 or 2.
+                if function == INPUT_FUNCTION_INPUT:
+                    dbusservice['/State'] = bool(level)*1
         except:
             traceback.print_exc()
             mainloop.quit()
