@@ -152,9 +152,9 @@ def main():
             "{}.{}.inp_{}".format(args.servicebase, TYPES[f].id, gpio), bus=dbusconnection())
 
         # Add objects required by ve-api
-        dbusservice.add_path('/Mgmt/ProcessName', __file__)
-        dbusservice.add_path('/Mgmt/ProcessVersion', VERSION)
-        dbusservice.add_path('/Mgmt/Connection', path)
+        dbusservice.add_path('/Management/ProcessName', __file__)
+        dbusservice.add_path('/Management/ProcessVersion', VERSION)
+        dbusservice.add_path('/Management/Connection', path)
         dbusservice.add_path('/DeviceInstance', gpio)
         dbusservice.add_path('/ProductId', 0xFFFF) # None set, FIXME?
         dbusservice.add_path('/ProductName', TYPES[f].name) #FIXME
