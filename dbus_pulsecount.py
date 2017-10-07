@@ -41,13 +41,6 @@ INPUTTYPES = [
 ]
 MAXTYPE = len(INPUTTYPES)
 
-# TODO, i18n?
-UNITS = [
-    u'l',
-    unichr(0x33a5) # cubic meter
-]
-MAXUNIT = len(UNITS)
-
 class SystemBus(dbus.bus.BusConnection):
 	def __new__(cls):
 		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
@@ -150,11 +143,7 @@ def main():
     settings = {}
 
     def get_volume_text(gpio, path, value):
-        try:
-            unit = UNITS[settings[gpio]['unit']]
-        except IndexError:
-            return str(value)
-        return str(value) + ' ' + unit
+        return str(value) + ' cubic meter'
 
     def register_gpio(path, gpio, f):
         print "Registering GPIO {} for function {}".format(gpio, f)
@@ -207,10 +196,9 @@ def main():
     for inp, pth in inputs.items():
         supported_settings = {
             'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
-            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, MAXTYPE, 1],
-            'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 1, 1, 100],
+            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, MAXTYPE],
+            'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'unit': ['/Settings/DigitalInput/{}/Unit'.format(inp), 0, 0, MAXUNIT],
             'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1]
         }
         settings[inp] = sd = SettingsDevice(dbusconnection(), supported_settings, partial(handle_setting_change, inp), timeout=10)
