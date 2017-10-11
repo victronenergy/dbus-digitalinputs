@@ -191,7 +191,8 @@ def main():
                 # Input disabled
                 unregister_gpio(inp)
         elif setting == 'inputtype':
-            services[inp]['/Type'] = INPUTTYPES[min(int(new), MAXTYPE-1)]
+            if new != old:
+                services[inp]['/Type'] = INPUTTYPES[min(int(new), MAXTYPE-1)]
 
     for inp, pth in inputs.items():
         supported_settings = {
