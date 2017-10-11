@@ -1,14 +1,18 @@
-# dbus-pulsecounter
+# dbus-digitalinputs
 
-Service for ccgx/venus on beaglebone. Reads an analog input and counts the
-pulses delivered by an external meter. Publish results on dbus.
+This is a service for venus on the beaglebone
+([Venus GX](https://www.victronenergy.com/panel-systems-remote-monitoring/venus-gx)),
+though it may be applicable to other platforms as well. It reads the digital input pins
+and depending on the configuration, it will either count the pulses delivered
+by an external meter and publish the count and volume measured, or simply publish the state
+of an input so that it can be used by other services or as an alarm input.
 
 # Running
 
 Normally the service will be started by a daemontools run script. However, to run
 it manually on a beaglebone aka Venus GX, use this command:
 
-    python dbus_pulsecount.py /dev/gpio/digital_input_*
+    python dbus_digitalinputs.py /dev/gpio/digital_input_*
     
 On the first run it will create the user settings for the 5 digital inputs:
 
@@ -17,7 +21,7 @@ On the first run it will create the user settings for the 5 digital inputs:
     /Settings/DigitalInput/x/Multiplier cubic meters per pulse, defaults to 0.001
     /Settings/DigitalInput/x/Inverted   [0=Pin is active high, 1=Pin is active low]
 
-And it creates one other path for each input:
+It also creates one other path for each input:
 
     /Settings/DigitalInput/x/Count      non-volatile store for the actual pulse count
 
