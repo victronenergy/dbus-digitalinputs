@@ -170,7 +170,8 @@ def main():
         elif f == INPUT_FUNCTION_INPUT:
             dbusservice.add_path('/State', value=settings[gpio]['invert'])
             dbusservice.add_path('/Type',
-                value=INPUTTYPES[min(settings[gpio]['inputtype'], MAXTYPE-1)])
+                value=max(0, min(settings[gpio]['inputtype'], MAXTYPE-1)),
+                gettextcallback=lambda p, v: INPUTTYPES[v])
         pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
