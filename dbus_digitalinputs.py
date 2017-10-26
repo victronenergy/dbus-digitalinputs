@@ -23,23 +23,30 @@ SAVEINTERVAL = 60000
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_INPUT = 2
 
-Product = namedtuple('Point', ['id', 'name', 'product'])
-
-FUNCTIONS = {
-    INPUT_FUNCTION_COUNTER: Product('pulsemeter', 'Pulse meter', 0xA163),
-    INPUT_FUNCTION_INPUT: Product('digitalinput', 'Digital input', 0xA164),
-}
+Translation = namedtuple('Translation', ['id', 'no', 'yes'])
 
 # Only append at the end
 INPUTTYPES = [
-    'Door alarm',
+    'Disabled',
+    'Pulse meter',
+    'Door',
+    'Bilge pump',
     'Bilge alarm',
     'Burglar alarm',
     'Smoke alarm',
     'Fire alarm',
     'CO2 alarm'
 ]
-MAXTYPE = len(INPUTTYPES)
+
+# Translations. The text will be used only for GetText, it will be translated
+# in the gui.
+TRANSLATIONS = [
+    Translation(0, 'low', 'high'),
+    Translation(1, 'no', 'yes'),
+    Translation(2, 'inactive', 'active'),
+    Translation(3, 'open', 'close'),
+    Translation(4, 'running', 'stopped')
+]
 
 class SystemBus(dbus.bus.BusConnection):
 	def __new__(cls):
@@ -104,7 +111,7 @@ class EpollPulseCounter(BasePulseCounter):
         return gpio in self.gpiomap
 
     def __call__(self):
-        while True: 
+        while True:
             # We have a timeout of 1 second on the poll, because poll() only
             # looks at files in the epoll object at the time poll() was called.
             # The timeout means we let other files (added via calls to
@@ -114,9 +121,164 @@ class EpollPulseCounter(BasePulseCounter):
                 v = os.read(fd, 1)
                 yield self.fdmap[fd], int(v)
 
+
+class HandlerMaker(type):
+    """ Meta-class for keeping track of all extended classes. """
+    def __init__(cls, name, bases, attrs):
+        if not hasattr(cls, 'handlers'):
+            cls.handlers = {}
+        else:
+            cls.handlers[cls.type_id] = cls
+
+class PinHandler(object):
+    product_id = 0xFFFF
+    product_name = 'Generic GPIO'
+    dbus_name = "digital"
+    __metaclass__ = HandlerMaker
+    def __init__(self, bus, base, path, gpio, settings):
+        self.gpio = gpio
+        self.path = path
+        self.bus = bus
+        self.service = None
+        self.settings = settings
+
+        self.service = VeDbusService(
+            "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus)
+
+        # Add objects required by ve-api
+        self.service.add_path('/Management/ProcessName', __file__)
+        self.service.add_path('/Management/ProcessVersion', VERSION)
+        self.service.add_path('/Management/Connection', path)
+        self.service.add_path('/DeviceInstance', gpio)
+        self.service.add_path('/ProductId', self.product_id)
+        self.service.add_path('/ProductName', self.product_name)
+        self.service.add_path('/Connected', 1)
+
+        # We'll count the pulses for all types of services
+        self.service.add_path('/Count', value=settings['count'])
+
+    def deactivate(self):
+        self.service.__del__()
+        del self.service
+        self.service = None
+
+    def toggle(self, level):
+        # Only increment Count on rising edge.
+        if level:
+            self.service['/Count'] = (self.service['/Count']+1) % MAXCOUNT
+
+    @property
+    def active(self):
+        return self.service is not None
+
+    @property
+    def count(self):
+        return self.service['/Count']
+
+    @classmethod
+    def createHandler(cls, _type, *args, **kwargs):
+        if _type in cls.handlers:
+            return cls.handlers[_type](*args, **kwargs)
+        return None
+
+
+class DisabledPin(PinHandler):
+    """ Place holder for a disabled pin. """
+    type_id = 0
+    def __init__(self, bus, base, path, gpio, settings):
+        self.service = None
+        self.bus = bus
+        self.settings = settings
+
+    def deactivate(self):
+        pass
+
+    def toggle(self, level):
+        pass
+
+    @property
+    def count(self):
+        return self.settings['count']
+
+
+class VolumeCounter(PinHandler):
+    product_id = 0xA163
+    product_name = "Pulse meter"
+    dbus_name = "pulsemeter"
+    type_id = 1
+
+    def __init__(self, bus, base, path, gpio, settings):
+        super(VolumeCounter, self).__init__(bus, base, path, gpio, settings)
+        self.service.add_path('/Aggregate', value=self.count*self.rate,
+            gettextcallback=lambda p, v: (str(v) + ' cubic meter'))
+
+    @property
+    def rate(self):
+        return self.settings['rate']
+
+    def toggle(self, level):
+        super(VolumeCounter, self).toggle(level)
+        self.service['/Aggregate'] = self.count * self.rate
+
+class PinAlarm(PinHandler):
+    product_id = 0xA164
+    product_name = "Digital input"
+    dbus_name = "digitalinput"
+    type_id = 0xFF
+
+    def __init__(self, bus, base, path, gpio, settings):
+        super(PinAlarm, self).__init__(bus, base, path, gpio, settings)
+        self.service.add_path('/InputState', value=0)
+        self.service.add_path('/Alarm', value=0)
+
+        # Also expose the type
+        self.service.add_path('/Type', value=self.type_id,
+            gettextcallback=lambda p, v: INPUTTYPES[v])
+
+    def toggle(self, level):
+        super(PinAlarm, self).toggle(level)
+        self.service['/InputState'] = bool(level)*1
+        # Ensure that the alarm flag resets if the /AlarmSetting config option
+        # disappears.
+        self.service['/Alarm'] = bool(level and self.settings['alarm']) * 2
+
+# Various types of things we might want to monitor
+class DoorSensor(PinAlarm):
+    product_name = "Door alarm"
+    type_id = 2
+
+class BilgePump(PinAlarm):
+    product_name = "Bilge pump"
+    type_id = 3
+
+class BilgeAlarm(PinAlarm):
+    product_name = "Bilge alarm"
+    type_id = 4
+
+class BurglarAlarm(PinAlarm):
+    product_name = "Burglar alarm"
+    type_id = 5
+
+class SmokeAlarm(PinAlarm):
+    product_name = "Smoke alarm"
+    type_id = 6
+
+class FireAlarm(PinAlarm):
+    product_name = "Fire alarm"
+    type_id = 7
+
+class CO2Alarm(PinAlarm):
+    product_name = "CO2 alarm"
+    type_id = 8
+
+class Generator(PinAlarm):
+    product_name = "Generator"
+    type_id = 9
+
+
 def dbusconnection():
-    # dbus already ensures singleton-behaviour
     return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
+
 
 def main():
     parser = ArgumentParser(description=sys.argv[0])
@@ -140,76 +302,53 @@ def main():
     services = {}
     inputs = dict(enumerate(args.inputs, 1))
     pulses = PulseCounter() # callable that iterates over pulses
-    settings = {}
 
-    def get_volume_text(gpio, path, value):
-        return str(value) + ' cubic meter'
+    def register_gpio(path, gpio, bus, settings):
+        _type = settings['inputtype']
+        print "Registering GPIO {} for type {}".format(gpio, _type)
 
-    def register_gpio(path, gpio, f):
-        print "Registering GPIO {} for function {}".format(gpio, f)
+        handler = PinHandler.createHandler(_type,
+            bus, args.servicebase, path, gpio, settings)
+        services[gpio] = handler
 
-        function = FUNCTIONS[f]
-        services[gpio] = dbusservice = VeDbusService(
-            "{}.{}.input{:02d}".format(args.servicebase, function.id, gpio), bus=dbusconnection())
-
-        # Add objects required by ve-api
-        dbusservice.add_path('/Management/ProcessName', __file__)
-        dbusservice.add_path('/Management/ProcessVersion', VERSION)
-        dbusservice.add_path('/Management/Connection', path)
-        dbusservice.add_path('/DeviceInstance', gpio)
-        dbusservice.add_path('/ProductId', function.product) # None set, FIXME?
-        dbusservice.add_path('/ProductName', function.name)
-        dbusservice.add_path('/Connected', 1)
-
-        dbusservice.add_path('/Count', value=0)
-        dbusservice['/Count'] = settings[gpio]['count']
-        if f == INPUT_FUNCTION_COUNTER:
-            dbusservice.add_path('/Aggregate', value=0,
-                gettextcallback=partial(get_volume_text, gpio))
-            dbusservice['/Aggregate'] = settings[gpio]['count'] * settings[gpio]['rate']
-        elif f == INPUT_FUNCTION_INPUT:
-            dbusservice.add_path('/State', value=settings[gpio]['invert'])
-            dbusservice.add_path('/Type',
-                value=max(0, min(settings[gpio]['inputtype'], MAXTYPE-1)),
-                gettextcallback=lambda p, v: INPUTTYPES[v])
-        pulses.register(path, gpio)
+        # Only monitor if enabled
+        if _type > 0:
+            pulses.register(path, gpio)
 
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
         pulses.unregister(gpio)
-        services[gpio].__del__()
-        del services[gpio]
+        services[gpio].deactivate()
 
-    # Interface to settings
     def handle_setting_change(inp, setting, old, new):
-        if setting == 'function':
+        if setting == 'inputtype':
             if new:
+                # Get current bus and settings objects, to be reused
+                service = services[inp]
+                bus, settings = service.bus, service.settings
+
                 # Input enabled. If already enabled, unregister the old one first.
                 if pulses.registered(inp):
                     unregister_gpio(inp)
-                register_gpio(inputs[inp], inp, int(new))
+                register_gpio(inputs[inp], inp, bus, settings)
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
-        elif setting == 'inputtype':
-            if new != old:
-                services[inp]['/Type'] = INPUTTYPES[min(int(new), MAXTYPE-1)]
 
     for inp, pth in inputs.items():
         supported_settings = {
-            'function': ['/Settings/DigitalInput/{}/Function'.format(inp), 0, 0, 2],
-            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, MAXTYPE],
+            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1]
+            'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1],
+            'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
         }
-        settings[inp] = sd = SettingsDevice(dbusconnection(), supported_settings, partial(handle_setting_change, inp), timeout=10)
-        if sd['function'] > 0:
-            register_gpio(pth, inp, int(sd['function']))
+        bus = dbusconnection()
+        sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, inp), timeout=10)
+        register_gpio(pth, inp, bus, sd)
 
     def poll(mainloop):
         from time import time
-        #stamps = { inp: [0] * 5 for inp in gpios }
         idx = 0
 
         try:
@@ -217,23 +356,9 @@ def main():
                 # epoll object only resyncs once a second. We may receive
                 # a pulse for something that's been deregistered.
                 try:
-                    dbusservice = services[inp]
+                    services[inp].toggle(level)
                 except KeyError:
                     continue
-                function = settings[inp]['function']
-                invert = bool(settings[inp]['invert'])
-                level ^= invert
-
-                # Only increment Count on rising edge.
-                if level:
-                    countpath = '/Count'
-                    v = (dbusservice[countpath]+1) % MAXCOUNT
-                    dbusservice[countpath] = v
-                    if function == INPUT_FUNCTION_COUNTER:
-                        dbusservice['/Aggregate'] = v * settings[inp]['rate']
-
-                if function == INPUT_FUNCTION_INPUT:
-                    dbusservice['/State'] = bool(level)*1
         except:
             traceback.print_exc()
             mainloop.quit()
@@ -249,9 +374,10 @@ def main():
 
     # Periodically save the counter
     def save_counters():
+        return # FIXME
         for inp in inputs:
-            if settings[inp]['function'] > 0:
-                settings[inp]['count'] = services[inp]['/Count']
+            if settings[inp]['inputtype'] > 0:
+                settings[inp]['count'] = services[inp].count
         return True
     gobject.timeout_add(SAVEINTERVAL, save_counters)
 
