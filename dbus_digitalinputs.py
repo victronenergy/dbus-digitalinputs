@@ -133,7 +133,7 @@ class HandlerMaker(type):
 
 class PinHandler(object):
     product_id = 0xFFFF
-    product_name = 'Generic GPIO'
+    _product_name = 'Generic GPIO'
     dbus_name = "digital"
     __metaclass__ = HandlerMaker
     def __init__(self, bus, base, path, gpio, settings):
@@ -156,8 +156,26 @@ class PinHandler(object):
         self.service.add_path('/ProductName', self.product_name)
         self.service.add_path('/Connected', 1)
 
+        # Custom name setting
+        def _change_name(p, v):
+            # This should fire a change event that will update product_name
+            # below.
+            settings['name'] = v
+            return True
+
+        self.service.add_path('/CustomName', settings['name'], writeable=True,
+            onchangecallback=_change_name)
+
         # We'll count the pulses for all types of services
         self.service.add_path('/Count', value=settings['count'])
+
+    @property
+    def product_name(self):
+        return self.settings['name'] or self._product_name
+
+    @product_name.setter
+    def product_name(self, v):
+        self.service['/ProductName'] = v or self._product_name
 
     def deactivate(self):
         self.service.__del__()
@@ -192,6 +210,7 @@ class PinHandler(object):
 
 class DisabledPin(PinHandler):
     """ Place holder for a disabled pin. """
+    _product_name = 'Disabled'
     type_id = 0
     def __init__(self, bus, base, path, gpio, settings):
         self.service = None
@@ -215,7 +234,7 @@ class DisabledPin(PinHandler):
 
 class VolumeCounter(PinHandler):
     product_id = 0xA163
-    product_name = "Pulse meter"
+    _product_name = "Pulse meter"
     dbus_name = "pulsemeter"
     type_id = 1
 
@@ -234,7 +253,7 @@ class VolumeCounter(PinHandler):
 
 class PinAlarm(PinHandler):
     product_id = 0xA164
-    product_name = "Digital input"
+    _product_name = "Digital input"
     dbus_name = "digitalinput"
     type_id = 0xFF
     translation = 0 # low, high
@@ -265,42 +284,42 @@ class PinAlarm(PinHandler):
 
 # Various types of things we might want to monitor
 class DoorSensor(PinAlarm):
-    product_name = "Door alarm"
+    _product_name = "Door alarm"
     type_id = 2
     translation = 3 # open, closed
 
 class BilgePump(PinAlarm):
-    product_name = "Bilge pump"
+    _product_name = "Bilge pump"
     type_id = 3
     translation = 1 # off, on
 
 class BilgeAlarm(PinAlarm):
-    product_name = "Bilge alarm"
+    _product_name = "Bilge alarm"
     type_id = 4
     translation = 4 # ok, alarm
 
 class BurglarAlarm(PinAlarm):
-    product_name = "Burglar alarm"
+    _product_name = "Burglar alarm"
     type_id = 5
     translation = 4 # ok, alarm
 
 class SmokeAlarm(PinAlarm):
-    product_name = "Smoke alarm"
+    _product_name = "Smoke alarm"
     type_id = 6
     translation = 4 # ok, alarm
 
 class FireAlarm(PinAlarm):
-    product_name = "Fire alarm"
+    _product_name = "Fire alarm"
     type_id = 7
     translation = 4 # ok, alarm
 
 class CO2Alarm(PinAlarm):
-    product_name = "CO2 alarm"
+    _product_name = "CO2 alarm"
     type_id = 8
     translation = 4 # ok, alarm
 
 class Generator(PinAlarm):
-    product_name = "Generator"
+    _product_name = "Generator"
     type_id = 9
     translation = 5 # running, stopped
 
@@ -363,8 +382,10 @@ def main():
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
-        elif ('rate', 'invert', 'alarm'):
+        elif setting in ('rate', 'invert', 'alarm'):
             services[inp].refresh()
+        elif setting == 'name':
+            services[inp].product_name = new
 
     for inp, pth in inputs.items():
         supported_settings = {
@@ -373,6 +394,7 @@ def main():
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
             'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
+            'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
         }
         bus = dbusconnection()
         sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, inp), timeout=10)
