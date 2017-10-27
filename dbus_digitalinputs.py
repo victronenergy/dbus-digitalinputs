@@ -142,6 +142,7 @@ class PinHandler(object):
         self.bus = bus
         self.service = None
         self.settings = settings
+        self._level = 0 # Remember last state
 
         self.service = VeDbusService(
             "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus)
@@ -165,8 +166,14 @@ class PinHandler(object):
 
     def toggle(self, level):
         # Only increment Count on rising edge.
-        if level:
+        if level and level != self._level:
             self.service['/Count'] = (self.service['/Count']+1) % MAXCOUNT
+        self._level = level
+
+    def refresh(self):
+        """ Toggle state to last remembered state. This is called if settings
+            are changed so the Service can recalculate paths. """
+        self.toggle(self._level)
 
     @property
     def active(self):
@@ -190,16 +197,20 @@ class DisabledPin(PinHandler):
         self.service = None
         self.bus = bus
         self.settings = settings
+        self._level = 0 # Remember last state
 
     def deactivate(self):
         pass
 
     def toggle(self, level):
-        pass
+        self._level = level
 
     @property
     def count(self):
         return self.settings['count']
+
+    def refresh(self):
+        pass
 
 
 class VolumeCounter(PinHandler):
@@ -352,6 +363,8 @@ def main():
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
+        elif ('rate', 'invert', 'alarm'):
+            services[inp].refresh()
 
     for inp, pth in inputs.items():
         supported_settings = {
