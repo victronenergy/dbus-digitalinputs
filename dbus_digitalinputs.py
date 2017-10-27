@@ -23,7 +23,7 @@ SAVEINTERVAL = 60000
 INPUT_FUNCTION_COUNTER = 1
 INPUT_FUNCTION_INPUT = 2
 
-Translation = namedtuple('Translation', ['id', 'no', 'yes'])
+Translation = namedtuple('Translation', ['no', 'yes'])
 
 # Only append at the end
 INPUTTYPES = [
@@ -41,11 +41,12 @@ INPUTTYPES = [
 # Translations. The text will be used only for GetText, it will be translated
 # in the gui.
 TRANSLATIONS = [
-    Translation(0, 'low', 'high'),
-    Translation(1, 'no', 'yes'),
-    Translation(2, 'inactive', 'active'),
-    Translation(3, 'open', 'close'),
-    Translation(4, 'running', 'stopped')
+    Translation('low', 'high'),
+    Translation('off', 'on'),
+    Translation('no', 'yes'),
+    Translation('open', 'closed'),
+    Translation('ok', 'alarm'),
+    Translation('running', 'stopped')
 ]
 
 class SystemBus(dbus.bus.BusConnection):
@@ -225,10 +226,13 @@ class PinAlarm(PinHandler):
     product_name = "Digital input"
     dbus_name = "digitalinput"
     type_id = 0xFF
+    translation = 0 # low, high
 
     def __init__(self, bus, base, path, gpio, settings):
         super(PinAlarm, self).__init__(bus, base, path, gpio, settings)
         self.service.add_path('/InputState', value=0)
+        self.service.add_path('/State', value=self.get_state(0),
+            gettextcallback=lambda p, v: TRANSLATIONS[v/2][v%2])
         self.service.add_path('/Alarm', value=0)
 
         # Also expose the type
@@ -238,42 +242,56 @@ class PinAlarm(PinHandler):
     def toggle(self, level):
         super(PinAlarm, self).toggle(level)
         self.service['/InputState'] = bool(level)*1
+        self.service['/State'] = self.get_state(level)
         # Ensure that the alarm flag resets if the /AlarmSetting config option
         # disappears.
         self.service['/Alarm'] = bool(level and self.settings['alarm']) * 2
+
+    def get_state(self, level):
+        state = level ^ self.settings['invert']
+        return 2 * self.translation + state
+
 
 # Various types of things we might want to monitor
 class DoorSensor(PinAlarm):
     product_name = "Door alarm"
     type_id = 2
+    translation = 3 # open, closed
 
 class BilgePump(PinAlarm):
     product_name = "Bilge pump"
     type_id = 3
+    translation = 1 # off, on
 
 class BilgeAlarm(PinAlarm):
     product_name = "Bilge alarm"
     type_id = 4
+    translation = 4 # ok, alarm
 
 class BurglarAlarm(PinAlarm):
     product_name = "Burglar alarm"
     type_id = 5
+    translation = 4 # ok, alarm
 
 class SmokeAlarm(PinAlarm):
     product_name = "Smoke alarm"
     type_id = 6
+    translation = 4 # ok, alarm
 
 class FireAlarm(PinAlarm):
     product_name = "Fire alarm"
     type_id = 7
+    translation = 4 # ok, alarm
 
 class CO2Alarm(PinAlarm):
     product_name = "CO2 alarm"
     type_id = 8
+    translation = 4 # ok, alarm
 
 class Generator(PinAlarm):
     product_name = "Generator"
     type_id = 9
+    translation = 5 # running, stopped
 
 
 def dbusconnection():
@@ -340,7 +358,7 @@ def main():
             'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'invert': ['/Settings/DigitalInput/{}/Inverted'.format(inp), 0, 0, 1],
+            'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
             'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
         }
         bus = dbusconnection()
