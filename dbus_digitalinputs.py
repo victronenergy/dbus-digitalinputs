@@ -180,6 +180,7 @@ class PinHandler(object):
             self.service['/ProductName'] = v or self._product_name
 
     def deactivate(self):
+        self.save_count()
         self.service.__del__()
         del self.service
         self.service = None
@@ -194,6 +195,9 @@ class PinHandler(object):
         """ Toggle state to last remembered state. This is called if settings
             are changed so the Service can recalculate paths. """
         self.toggle(self._level)
+
+    def save_count(self):
+        self.settings['count'] = self.count
 
     @property
     def active(self):
@@ -225,6 +229,10 @@ class DisabledPin(PinHandler):
 
     def toggle(self, level):
         self._level = level
+
+    def save_count(self):
+        # Do nothing
+        pass
 
     @property
     def count(self):
@@ -429,10 +437,8 @@ def main():
 
     # Periodically save the counter
     def save_counters():
-        return # FIXME
         for inp in inputs:
-            if settings[inp]['inputtype'] > 0:
-                settings[inp]['count'] = services[inp].count
+            services[inp].save_count()
         return True
     gobject.timeout_add(SAVEINTERVAL, save_counters)
 
