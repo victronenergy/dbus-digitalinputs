@@ -140,7 +140,6 @@ class PinHandler(object):
         self.gpio = gpio
         self.path = path
         self.bus = bus
-        self.service = None
         self.settings = settings
         self._level = 0 # Remember last state
 
@@ -175,7 +174,10 @@ class PinHandler(object):
 
     @product_name.setter
     def product_name(self, v):
-        self.service['/ProductName'] = v or self._product_name
+        # Some pin types don't have an associated service (Disabled pins for
+        # example)
+        if self.service is not None:
+            self.service['/ProductName'] = v or self._product_name
 
     def deactivate(self):
         self.service.__del__()
