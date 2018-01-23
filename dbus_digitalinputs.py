@@ -197,7 +197,8 @@ class PinHandler(object):
         self.toggle(self._level)
 
     def save_count(self):
-        self.settings['count'] = self.count
+        if self.service is not None:
+            self.settings['count'] = self.count
 
     @property
     def active(self):
