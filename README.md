@@ -44,7 +44,20 @@ Inputs with their type set to pulse meter will create a service
 Inputs with their type set to a digital input will create a service
 `com.victronenergy.digitalinput.input0x`, and these dbus paths:
 
-    /State  1 when active, 0 when inactive
-    /Count  count of active pulses
-    /Type   integer reflecting the type as documented above. Calling GetText returns a text string.
     /Alarm  if /AlarmSetting is set above, this will indicate an alarm condition.
+    /Count  count of active pulses
+    /State One of the below, depending on the selected type
+      0 = low
+      1 = high
+      2 = off
+      3 = on
+      4 = no
+      5 = yes
+      6 = open
+      7 = closed
+      8 = ok
+      9 = alarm
+      10 = running
+      11 = stopped
+
+    /Type   integer reflecting the type as documented above. Calling GetText returns a text string.
