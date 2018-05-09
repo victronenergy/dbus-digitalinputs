@@ -274,7 +274,7 @@ class PinAlarm(PinHandler):
         self.service.add_path('/InputState', value=0)
         self.service.add_path('/State', value=self.get_state(0),
             gettextcallback=lambda p, v: TRANSLATIONS[v/2][v%2])
-        self.service.add_path('/Alarm', value=0)
+        self.service.add_path('/Alarm', value=self.get_alarm_state(0))
 
         # Also expose the type
         self.service.add_path('/Type', value=self.type_id,
@@ -286,11 +286,15 @@ class PinAlarm(PinHandler):
         self.service['/State'] = self.get_state(level)
         # Ensure that the alarm flag resets if the /AlarmSetting config option
         # disappears.
-        self.service['/Alarm'] = bool(level and self.settings['alarm']) * 2
+        self.service['/Alarm'] = self.get_alarm_state(level)
 
     def get_state(self, level):
         state = level ^ self.settings['invert']
         return 2 * self.translation + state
+
+    def get_alarm_state(self, level):
+        return 2 * bool(
+            (level ^ self.settings['invertalarm']) and self.settings['alarm'])
 
 
 # Various types of things we might want to monitor
@@ -393,7 +397,7 @@ def main():
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
-        elif setting in ('rate', 'invert', 'alarm'):
+        elif setting in ('rate', 'invert', 'alarm', 'invertalarm'):
             services[inp].refresh()
         elif setting == 'name':
             services[inp].product_name = new
@@ -404,6 +408,7 @@ def main():
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
+            'invertalarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
             'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
             'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
         }
