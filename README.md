@@ -30,6 +30,7 @@ On the first run it will create the user settings for the 5 digital inputs:
     /Settings/DigitalInput/x/Multiplier        for Type=1, cubic meters per pulse, defaults to 0.001
     /Settings/DigitalInput/x/InvertTranslation Swaps the interpretation of the logic, for inputs that are active low
     /Settings/DigitalInput/x/AlarmSetting      When Type!=1, whether to raise an alarm if the pin is active
+    /Settings/DigitalInput/x/InvertAlarm       Whether a high or low logic value constitutes an alarm condition
 
 It also creates one other path for each input:
 
