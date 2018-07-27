@@ -218,6 +218,10 @@ class PinHandler(object):
     def count(self):
         return self.service['/Count']
 
+    @count.setter
+    def count(self, v):
+        self.service['/Count'] = v
+
     @classmethod
     def createHandler(cls, _type, *args, **kwargs):
         if _type in cls.handlers:
@@ -248,6 +252,10 @@ class DisabledPin(PinHandler):
     @property
     def count(self):
         return self.settings['count']
+
+    @count.setter
+    def count(self, v):
+        pass
 
     def refresh(self):
         pass
@@ -412,6 +420,14 @@ def main():
             services[inp].refresh()
         elif setting == 'name':
             services[inp].product_name = new
+        elif setting == 'count':
+            # Don't want this triggered on a period save, so only execute
+            # if it has changed.
+            v = int(new)
+            s = services[inp]
+            if s.count != v:
+                s.count = v
+                s.refresh()
 
     for inp, pth in inputs.items():
         supported_settings = {
