@@ -66,6 +66,7 @@ class DebugPulseCounter(BasePulseCounter):
 
     def register(self, path, gpio):
         self.gpiomap[gpio] = None
+        return 0
 
     def unregister(self, gpio):
         del self.gpiomap[gpio]
@@ -96,10 +97,11 @@ class EpollPulseCounter(BasePulseCounter):
             fp.write('both')
 
         fp = open(os.path.join(path, 'value'), 'rb')
-        fp.read() # flush it in case it's high at startup
+        level = int(fp.read()) # flush it in case it's high at startup
         self.fdmap[fp.fileno()] = gpio
         self.gpiomap[gpio] = fp
         self.ob.register(fp, EPOLLPRI)
+        return level
 
     def unregister(self, gpio):
         fp = self.gpiomap[gpio]
@@ -184,6 +186,14 @@ class PinHandler(object):
         self.service.__del__()
         del self.service
         self.service = None
+
+    @property
+    def level(self):
+        return self._level
+
+    @level.setter
+    def level(self, l):
+        self._level = int(bool(l))
 
     def toggle(self, level):
         # Only increment Count on rising edge.
@@ -376,7 +386,8 @@ def main():
 
         # Only monitor if enabled
         if _type > 0:
-            pulses.register(path, gpio)
+            handler.level = pulses.register(path, gpio)
+            handler.refresh()
 
     def unregister_gpio(gpio):
         print "unRegistering GPIO {}".format(gpio)
