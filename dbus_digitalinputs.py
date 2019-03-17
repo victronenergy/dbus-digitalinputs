@@ -35,7 +35,8 @@ INPUTTYPES = [
     'Burglar alarm',
     'Smoke alarm',
     'Fire alarm',
-    'CO2 alarm'
+    'CO2 alarm',
+	'Generator'
 ]
 
 # Translations. The text will be used only for GetText, it will be translated
