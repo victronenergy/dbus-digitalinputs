@@ -125,6 +125,35 @@ class EpollPulseCounter(BasePulseCounter):
                 v = os.read(fd, 1)
                 yield self.fdmap[fd], int(v)
 
+class PollingPulseCounter(BasePulseCounter):
+    def __init__(self):
+        self.gpiomap = {}
+
+    def register(self, path, gpio):
+        path = os.path.realpath(path)
+
+        fp = open(os.path.join(path, 'value'), 'rb')
+        level = int(fp.read())
+        self.gpiomap[gpio] = [fp, level]
+        return level
+
+    def unregister(self, gpio):
+        del self.gpiomap[gpio]
+
+    def registered(self, gpio):
+        return gpio in self.gpiomap
+
+    def __call__(self):
+        from itertools import cycle
+        from time import sleep
+        while True:
+            for gpio, (fp, level) in self.gpiomap.iteritems():
+                fp.seek(0, os.SEEK_SET)
+                v = int(fp.read())
+                if v != level:
+                    self.gpiomap[gpio][1] = v
+                    yield gpio, v
+            sleep(1)
 
 class HandlerMaker(type):
     """ Meta-class for keeping track of all extended classes. """
@@ -367,16 +396,16 @@ def main():
     parser.add_argument('--servicebase',
         help='Base service name on dbus, default is com.victronenergy',
         default='com.victronenergy')
-    parser.add_argument('--debug',
-        help='Enable debug counter, this ignores the real gpios and simulates input',
-        default=False, action="store_true")
+    parser.add_argument('--poll',
+        help='Use a different kind of polling. Options are epoll, dumb and debug',
+        default='epoll')
     parser.add_argument('inputs', nargs='+', help='Path to digital input')
     args = parser.parse_args()
 
-    if args.debug:
-        PulseCounter = DebugPulseCounter
-    else:
-        PulseCounter = EpollPulseCounter
+    PulseCounter = {
+        'debug': DebugPulseCounter,
+        'poll': PollingPulseCounter,
+    }.get(args.poll, EpollPulseCounter)
 
     DBusGMainLoop(set_as_default=True)
 
