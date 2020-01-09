@@ -16,7 +16,7 @@ import gobject
 from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
 
-VERSION = '0.5'
+VERSION = '0.6'
 MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
 
