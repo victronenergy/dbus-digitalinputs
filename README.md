@@ -62,3 +62,22 @@ Inputs with their type set to a digital input will create a service
       11 = stopped
 
     /Type   integer reflecting the type as documented above. Calling GetText returns a text string.
+
+# Types of polling
+
+Three types of polling is available, and can be specified with the `--poll`
+commandline argument.
+
+## epoll
+Use this for gpios that support event/interrupt driven changes. This is the
+default.
+
+## poll
+Use this for gpios that does not support interrupts. The gpios are read once a
+second. This option is of course less efficient.
+
+## debug
+This is for use during development on hardware that might not have real gpios.
+A number of fake gpios are created, one for each commandline argument. The
+commandline arguments itself are not used in any way and can be anything, such
+as `1 2 3 4 5`. Each GPIO alternates high and low.
