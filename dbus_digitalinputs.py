@@ -36,7 +36,7 @@ INPUTTYPES = [
     'Smoke alarm',
     'Fire alarm',
     'CO2 alarm',
-	'Generator'
+    'Generator'
 ]
 
 # Translations. The text will be used only for GetText, it will be translated
@@ -51,12 +51,12 @@ TRANSLATIONS = [
 ]
 
 class SystemBus(dbus.bus.BusConnection):
-	def __new__(cls):
-		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
+    def __new__(cls):
+        return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
 
 class SessionBus(dbus.bus.BusConnection):
-	def __new__(cls):
-		return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
+    def __new__(cls):
+        return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
 class BasePulseCounter(object):
     pass
