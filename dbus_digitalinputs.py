@@ -86,8 +86,8 @@ class DebugPulseCounter(BasePulseCounter):
 
 class EpollPulseCounter(BasePulseCounter):
     def __init__(self):
-        self.fdmap = {}
         self.gpiomap = {}
+        self.states = {}
         self.ob = epoll()
 
     def register(self, path, gpio):
@@ -99,8 +99,8 @@ class EpollPulseCounter(BasePulseCounter):
 
         fp = open(os.path.join(path, 'value'), 'rb')
         level = int(fp.read()) # flush it in case it's high at startup
-        self.fdmap[fp.fileno()] = gpio
         self.gpiomap[gpio] = fp
+        self.states[gpio] = level
         self.ob.register(fp, EPOLLPRI)
         return level
 
@@ -108,7 +108,7 @@ class EpollPulseCounter(BasePulseCounter):
         fp = self.gpiomap[gpio]
         self.ob.unregister(fp)
         del self.gpiomap[gpio]
-        del self.fdmap[fp.fileno()]
+        del self.states[gpio]
         fp.close()
 
     def registered(self, gpio):
@@ -120,10 +120,20 @@ class EpollPulseCounter(BasePulseCounter):
             # looks at files in the epoll object at the time poll() was called.
             # The timeout means we let other files (added via calls to
             # register/unregister) into the loop at least that often.
-            for fd, evt in self.ob.poll(1):
-                os.lseek(fd, 0, os.SEEK_SET)
-                v = os.read(fd, 1)
-                yield self.fdmap[fd], int(v)
+            self.ob.poll(1)
+
+            # When coming out of the epoll call, we read all the gpios to make
+            # sure we didn't miss any edges.  This is a safety fallback that
+            # ensures everything is up to date once a second, but
+            # edge-triggered results are handled immediately.
+            # NOTE: There has not been a report of a missed interrupt yet.
+            # Belts and suspenders.
+            for gpio, fp in self.gpiomap.iteritems():
+                os.lseek(fp.fileno(), 0, os.SEEK_SET)
+                v = int(os.read(fp.fileno(), 1))
+                if v != self.states[gpio]:
+                    self.states[gpio] = v
+                    yield gpio, v
 
 class PollingPulseCounter(BasePulseCounter):
     def __init__(self):
