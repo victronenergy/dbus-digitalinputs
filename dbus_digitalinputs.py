@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 
 import sys, os
 import signal
@@ -12,7 +12,7 @@ sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'
 
 from dbus.mainloop.glib import DBusGMainLoop
 import dbus
-import gobject
+from gi.repository import GLib
 from vedbus import VeDbusService
 from settingsdevice import SettingsDevice
 
@@ -79,8 +79,7 @@ class DebugPulseCounter(BasePulseCounter):
         from itertools import cycle
         from time import sleep
         for level in cycle([0, 1]):
-            gpios = self.gpiomap.keys()
-            for gpio in gpios:
+            for gpio in list(self.gpiomap.keys()):
                 yield gpio, level
                 sleep(0.25/len(self.gpiomap))
 
@@ -128,7 +127,7 @@ class EpollPulseCounter(BasePulseCounter):
             # edge-triggered results are handled immediately.
             # NOTE: There has not been a report of a missed interrupt yet.
             # Belts and suspenders.
-            for gpio, fp in self.gpiomap.iteritems():
+            for gpio, fp in list(self.gpiomap.items()):
                 os.lseek(fp.fileno(), 0, os.SEEK_SET)
                 v = int(os.read(fp.fileno(), 1))
                 if v != self.states[gpio]:
@@ -157,7 +156,7 @@ class PollingPulseCounter(BasePulseCounter):
         from itertools import cycle
         from time import sleep
         while True:
-            for gpio, (fp, level) in self.gpiomap.iteritems():
+            for gpio, (fp, level) in list(self.gpiomap.items()):
                 fp.seek(0, os.SEEK_SET)
                 v = int(fp.read())
                 if v != level:
@@ -173,11 +172,10 @@ class HandlerMaker(type):
         else:
             cls.handlers[cls.type_id] = cls
 
-class PinHandler(object):
+class PinHandler(object, metaclass=HandlerMaker):
     product_id = 0xFFFF
     _product_name = 'Generic GPIO'
     dbus_name = "digital"
-    __metaclass__ = HandlerMaker
     def __init__(self, bus, base, path, gpio, settings):
         self.gpio = gpio
         self.path = path
@@ -331,7 +329,7 @@ class PinAlarm(PinHandler):
         super(PinAlarm, self).__init__(bus, base, path, gpio, settings)
         self.service.add_path('/InputState', value=0)
         self.service.add_path('/State', value=self.get_state(0),
-            gettextcallback=lambda p, v: TRANSLATIONS[v/2][v%2])
+            gettextcallback=lambda p, v: TRANSLATIONS[v//2][v%2])
         self.service.add_path('/Alarm', value=self.get_alarm_state(0))
 
         # Also expose the type
@@ -426,7 +424,7 @@ def main():
 
     def register_gpio(path, gpio, bus, settings):
         _type = settings['inputtype']
-        print "Registering GPIO {} for type {}".format(gpio, _type)
+        print ("Registering GPIO {} for type {}".format(gpio, _type))
 
         handler = PinHandler.createHandler(_type,
             bus, args.servicebase, path, gpio, settings)
@@ -438,7 +436,7 @@ def main():
             handler.refresh()
 
     def unregister_gpio(gpio):
-        print "unRegistering GPIO {}".format(gpio)
+        print ("unRegistering GPIO {}".format(gpio))
         pulses.unregister(gpio)
         services[gpio].deactivate()
 
@@ -509,8 +507,7 @@ def main():
 
     # Need to run the gpio polling in separate thread. Pass in the mainloop so
     # the thread can kill us if there is an exception.
-    gobject.threads_init()
-    mainloop = gobject.MainLoop()
+    mainloop = GLib.MainLoop()
 
     poller = Thread(target=lambda: poll(mainloop))
     poller.daemon = True
@@ -521,7 +518,7 @@ def main():
         for inp in inputs:
             services[inp].save_count()
         return True
-    gobject.timeout_add(SAVEINTERVAL, save_counters)
+    GLib.timeout_add(SAVEINTERVAL, save_counters)
 
     # Save counter on shutdown
     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
