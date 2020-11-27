@@ -189,9 +189,9 @@ class PinHandler(object):
             "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus)
 
         # Add objects required by ve-api
-        self.service.add_path('/Management/ProcessName', __file__)
-        self.service.add_path('/Management/ProcessVersion', VERSION)
-        self.service.add_path('/Management/Connection', path)
+        self.service.add_path('/Mgmt/ProcessName', __file__)
+        self.service.add_path('/Mgmt/ProcessVersion', VERSION)
+        self.service.add_path('/Mgmt/Connection', path)
         self.service.add_path('/DeviceInstance', gpio)
         self.service.add_path('/ProductId', self.product_id)
         self.service.add_path('/ProductName', self.product_name)
