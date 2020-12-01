@@ -452,6 +452,14 @@ def main():
                 # Input enabled. If already enabled, unregister the old one first.
                 if pulses.registered(inp):
                     unregister_gpio(inp)
+
+                # Before registering the new input, reset its settings to defaults
+                settings['count'] = 0
+                settings['invert'] = 0
+                settings['invertalarm'] = 0
+                settings['alarm'] = 0
+
+                # Register it
                 register_gpio(inputs[inp], inp, bus, settings)
             elif old:
                 # Input disabled
