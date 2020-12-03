@@ -302,8 +302,8 @@ class DisabledPin(PinHandler):
 
 
 class VolumeCounter(PinHandler):
-    product_id = 0xA163
-    _product_name = "Pulse meter"
+    product_id = 0xA165
+    _product_name = "Generic pulse meter"
     dbus_name = "pulsemeter"
     type_id = 1
 
@@ -321,8 +321,8 @@ class VolumeCounter(PinHandler):
         self.service['/Aggregate'] = self.count * self.rate
 
 class PinAlarm(PinHandler):
-    product_id = 0xA164
-    _product_name = "Digital input"
+    product_id = 0xA166
+    _product_name = "Generic digital input"
     dbus_name = "digitalinput"
     type_id = 0xFF
     translation = 0 # low, high
