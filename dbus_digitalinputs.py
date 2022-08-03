@@ -235,9 +235,12 @@ class PinHandler(object, metaclass=HandlerMaker):
         self._level = int(bool(l))
 
     def toggle(self, level):
+        raise NotImplementedError
+
+    def _toggle(self, level, service):
         # Only increment Count on rising edge.
         if level and level != self._level:
-            self.service['/Count'] = (self.service['/Count']+1) % MAXCOUNT
+            service['/Count'] = (service['/Count']+1) % MAXCOUNT
         self._level = level
 
     def refresh(self):
@@ -316,8 +319,9 @@ class VolumeCounter(PinHandler):
         return self.settings['rate']
 
     def toggle(self, level):
-        super(VolumeCounter, self).toggle(level)
-        self.service['/Aggregate'] = self.count * self.rate
+        with self.service as s:
+            super(VolumeCounter, self)._toggle(level, s)
+            s['/Aggregate'] = self.count * self.rate
 
 class PinAlarm(PinHandler):
     product_id = 0xA166
@@ -338,12 +342,13 @@ class PinAlarm(PinHandler):
             gettextcallback=lambda p, v: INPUTTYPES[v])
 
     def toggle(self, level):
-        super(PinAlarm, self).toggle(level)
-        self.service['/InputState'] = bool(level)*1
-        self.service['/State'] = self.get_state(level)
-        # Ensure that the alarm flag resets if the /AlarmSetting config option
-        # disappears.
-        self.service['/Alarm'] = self.get_alarm_state(level)
+        with self.service as s:
+            super(PinAlarm, self)._toggle(level, s)
+            s['/InputState'] = bool(level)*1
+            s['/State'] = self.get_state(level)
+            # Ensure that the alarm flag resets if the /AlarmSetting config option
+            # disappears.
+            s['/Alarm'] = self.get_alarm_state(level)
 
     def get_state(self, level):
         state = level ^ self.settings['invert']
