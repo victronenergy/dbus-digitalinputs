@@ -452,6 +452,11 @@ def main():
         services[gpio].deactivate()
 
     def handle_setting_change(inp, setting, old, new):
+        # This handler may also be called if some attribute of a setting
+        # is changed, but not the value. Bail if the value is unchanged.
+        if old == new:
+            return
+
         if setting == 'inputtype':
             if new:
                 # Get current bus and settings objects, to be reused
