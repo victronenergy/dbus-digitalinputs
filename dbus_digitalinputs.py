@@ -523,7 +523,7 @@ def main():
 
     for inp, pth in inputs.items():
         supported_settings = {
-            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)],
+            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
