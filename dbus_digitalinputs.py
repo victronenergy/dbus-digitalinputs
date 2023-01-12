@@ -16,7 +16,7 @@ from gi.repository import GLib
 from vedbus import VeDbusService, VeDbusItemImport
 from settingsdevice import SettingsDevice
 
-VERSION = '0.17'
+VERSION = '0.18'
 MAXCOUNT = 2**31-1
 SAVEINTERVAL = 60000
 
