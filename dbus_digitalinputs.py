@@ -13,7 +13,7 @@ sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'
 from dbus.mainloop.glib import DBusGMainLoop
 import dbus
 from gi.repository import GLib
-from vedbus import VeDbusService
+from vedbus import VeDbusService, VeDbusItemImport
 from settingsdevice import SettingsDevice
 
 VERSION = '0.17'
@@ -37,7 +37,8 @@ INPUTTYPES = [
     'Fire alarm',
     'CO2 alarm',
     'Generator',
-    'Generic I/O'
+    'Generic I/O',
+    'Touch enable',
 ]
 
 # Translations. The text will be used only for GetText, it will be translated
@@ -271,10 +272,9 @@ class PinHandler(object, metaclass=HandlerMaker):
         return None
 
 
-class DisabledPin(PinHandler):
-    """ Place holder for a disabled pin. """
-    _product_name = 'Disabled'
-    type_id = 0
+class NopPin(object):
+    """ Mixin for a pin with empty behaviour. Mix in BEFORE PinHandler so that
+        __init__ overrides the base behaviour. """
     def __init__(self, bus, base, path, gpio, settings):
         self.service = None
         self.bus = bus
@@ -303,6 +303,12 @@ class DisabledPin(PinHandler):
         pass
 
 
+class DisabledPin(NopPin, PinHandler):
+    """ Place holder for a disabled pin. """
+    _product_name = 'Disabled'
+    type_id = 0
+
+
 class VolumeCounter(PinHandler):
     product_id = 0xA165
     _product_name = "Generic pulse meter"
@@ -322,6 +328,30 @@ class VolumeCounter(PinHandler):
         with self.service as s:
             super(VolumeCounter, self)._toggle(level, s)
             s['/Aggregate'] = self.count * self.rate
+
+class TouchEnable(NopPin, PinHandler):
+    """ The pin is used to enable/disable the Touch screen when toggled.
+        No dbus-service is created. """
+    _product_name = 'TouchEnable'
+    type_id = 11
+
+    def __init__(self, *args, **kwargs):
+        super(TouchEnable, self).__init__(*args, **kwargs)
+        self.item = VeDbusItemImport(self.bus,
+            "com.victronenergy.settings", "/Settings/Gui/TouchEnabled")
+
+    def toggle(self, level):
+        super(TouchEnable, self).toggle(level)
+
+        # Toggle the touch-enable setting on the downward edge.
+        # Level is expected to be high with the switch open, and
+        # pulled low when pushed.
+        if level == 0:
+            enabled = bool(self.item.get_value())
+            self.item.set_value(int(not enabled))
+
+    def deactivate(self):
+        del self.item
 
 class PinAlarm(PinHandler):
     product_id = 0xA166
