@@ -351,6 +351,10 @@ class TouchEnable(NopPin, PinHandler):
             self.item.set_value(int(not enabled))
 
     def deactivate(self):
+        # Always re-enable touch when the pin is deactivated.
+        # This adds another layer of protection against accidental
+        # lockout.
+        self.item.set_value(1)
         del self.item
 
 class PinAlarm(PinHandler):
