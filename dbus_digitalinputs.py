@@ -393,6 +393,29 @@ class PinAlarm(PinHandler):
             (level ^ self.settings['invertalarm']) and self.settings['alarm'])
 
 
+class Generator(PinAlarm):
+    _product_name = "Generator"
+    type_id = 9
+    translation = 5 # running, stopped
+
+    def toggle(self, level):
+        super(Generator, self).toggle(level)
+
+        # Follow the same inversion sense as for display
+        v = level ^ self.settings['invert']
+
+        # Find all vebus services, and let them know
+        try:
+            services = [n for n in self.bus.list_names() if n.startswith(
+                'com.victronenergy.vebus.')]
+            for n in services:
+                self.bus.call_async(n, '/Ac/Control/RemoteGeneratorSelected', None,
+                    'SetValue', 'v', [v], None, None)
+        except dbus.exceptions.DBusException:
+            print ("DBus exception setting RemoteGeneratorSelected")
+            traceback.print_exc()
+
+
 # Various types of things we might want to monitor
 class DoorSensor(PinAlarm):
     _product_name = "Door alarm"
@@ -428,11 +451,6 @@ class CO2Alarm(PinAlarm):
     _product_name = "CO2 alarm"
     type_id = 8
     translation = 4 # ok, alarm
-
-class Generator(PinAlarm):
-    _product_name = "Generator"
-    type_id = 9
-    translation = 5 # running, stopped
 
 class GenericIO(PinAlarm):
     _product_name = "Generic I/O"
