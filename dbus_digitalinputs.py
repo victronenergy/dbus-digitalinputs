@@ -402,7 +402,7 @@ class Generator(PinAlarm):
         super(Generator, self).toggle(level)
 
         # Follow the same inversion sense as for display
-        v = level ^ self.settings['invert']
+        v = level ^ self.settings['invert'] ^ 1
 
         # Find all vebus services, and let them know
         try:
