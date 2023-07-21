@@ -398,12 +398,15 @@ class Generator(PinAlarm):
     type_id = 9
     translation = 5 # running, stopped
 
-    def toggle(self, level):
-        super(Generator, self).toggle(level)
+    def __init__(self, *args, **kwargs):
+        super(Generator, self).__init__(*args, **kwargs)
+        # Periodically rewrite the generator selection. The Multi may reset
+        # causing this to be lost, or a race condition on startup may cause
+        # it to not be set properly.
+        self._timer = GLib.timeout_add(30000,
+            lambda: self.select_generator(self.level ^ self.settings['invert'] ^ 1))
 
-        # Follow the same inversion sense as for display
-        v = level ^ self.settings['invert'] ^ 1
-
+    def select_generator(self, v):
         # Find all vebus services, and let them know
         try:
             services = [n for n in self.bus.list_names() if n.startswith(
@@ -415,6 +418,21 @@ class Generator(PinAlarm):
             print ("DBus exception setting RemoteGeneratorSelected")
             traceback.print_exc()
 
+    def toggle(self, level):
+        super(Generator, self).toggle(level)
+
+        # Follow the same inversion sense as for display
+        self.select_generator(level ^ self.settings['invert'] ^ 1)
+
+    def deactivate(self):
+        super(Generator, self).deactivate()
+        # When deactivating, reset the generator selection state
+        self.select_generator(0)
+
+        # And kill the periodic job
+        if self._timer is not None:
+            GLib.source_remove(self._timer)
+            self._timer = None
 
 # Various types of things we might want to monitor
 class DoorSensor(PinAlarm):
