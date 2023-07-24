@@ -404,7 +404,7 @@ class Generator(PinAlarm):
         # causing this to be lost, or a race condition on startup may cause
         # it to not be set properly.
         self._timer = GLib.timeout_add(30000,
-            lambda: self.select_generator(self.level ^ self.settings['invert'] ^ 1))
+            lambda: self.select_generator(self.level ^ self.settings['invert'] ^ 1) or True)
 
     def select_generator(self, v):
         # Find all vebus services, and let them know
@@ -430,9 +430,8 @@ class Generator(PinAlarm):
         self.select_generator(0)
 
         # And kill the periodic job
-        if self._timer is not None:
-            GLib.source_remove(self._timer)
-            self._timer = None
+        GLib.source_remove(self._timer)
+        self._timer = None
 
 # Various types of things we might want to monitor
 class DoorSensor(PinAlarm):
