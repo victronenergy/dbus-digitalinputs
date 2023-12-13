@@ -95,8 +95,11 @@ class EpollPulseCounter(BasePulseCounter):
         path = os.path.realpath(path)
 
         # Set up gpio for rising edge interrupts
-        with open(os.path.join(path, 'edge'), 'ab') as fp:
-            fp.write(b'both')
+        try:
+            with open(os.path.join(path, 'edge'), 'ab') as fp:
+                fp.write(b'both')
+        except:
+            pass
 
         fp = open(os.path.join(path, 'value'), 'rb')
         level = int(fp.read()) # flush it in case it's high at startup
