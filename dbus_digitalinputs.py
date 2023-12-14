@@ -628,8 +628,8 @@ def main():
 
     # Periodically save the counter
     def save_counters():
-        for inp in inputs:
-            services[inp].save_count()
+        for svc in services.values():
+            svc.save_count()
         return True
     GLib.timeout_add(SAVEINTERVAL, save_counters)
 
