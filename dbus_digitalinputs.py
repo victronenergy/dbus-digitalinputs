@@ -60,6 +60,11 @@ class SessionBus(dbus.bus.BusConnection):
     def __new__(cls):
         return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
+class InputPin():
+    def __init__(self, name=None, path=None):
+        self.name = name
+        self.path = path
+
 class BasePulseCounter(object):
     pass
 
@@ -542,11 +547,13 @@ def main():
             pulses.unregister(gpio)
             services[gpio].deactivate()
 
-    def handle_setting_change(inp, setting, old, new):
+    def handle_setting_change(pin, setting, old, new):
         # This handler may also be called if some attribute of a setting
         # is changed, but not the value. Bail if the value is unchanged.
         if old == new:
             return
+
+        inp = pin.name
 
         if setting == 'inputtype':
             if new:
@@ -571,7 +578,7 @@ def main():
                 settings['alarm'] = 0
 
                 # Register it
-                register_gpio(inputs[inp], inp, bus, settings)
+                register_gpio(pin.path, inp, bus, settings)
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
@@ -588,7 +595,14 @@ def main():
                 s.count = v
                 s.refresh()
 
+    pins = []
+
     for inp, pth in inputs.items():
+        pin = InputPin(inp, pth)
+        pins.append(pin)
+
+    for pin in pins:
+        inp = pin.name
         supported_settings = {
             'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
@@ -599,8 +613,8 @@ def main():
             'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
         }
         bus = dbusconnection()
-        sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, inp), timeout=10)
-        register_gpio(pth, inp, bus, sd)
+        sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, pin), timeout=10)
+        register_gpio(pin.path, inp, bus, sd)
 
     def poll(mainloop):
         from time import time
