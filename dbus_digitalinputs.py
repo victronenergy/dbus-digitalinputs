@@ -187,8 +187,6 @@ class PinHandler(object, metaclass=HandlerMaker):
     _product_name = 'Generic GPIO'
     dbus_name = "digital"
     def __init__(self, bus, base, path, gpio, settings):
-        self.gpio = gpio
-        self.path = path
         self.bus = bus
         self.settings = settings
         self._level = 0 # Remember last state
