@@ -196,8 +196,12 @@ class PinHandler(object, metaclass=HandlerMaker):
 
         instance = int(settings['instance'].split(':')[1])
 
+        name = str(gpio)
+        if name[0].isdecimal():
+            name = 'input_' + name
+
         self.service = VeDbusService(
-            "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus,
+            "{}.{}.{}".format(base, self.dbus_name, name), bus=bus,
             register=False)
 
         # Add objects required by ve-api
