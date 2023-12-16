@@ -61,6 +61,9 @@ class SessionBus(dbus.bus.BusConnection):
         return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
 class InputPin():
+    devid = None
+    devinstance = None
+
     def __init__(self, name=None, path=None):
         self.name = name
         self.path = path
@@ -191,6 +194,8 @@ class PinHandler(object, metaclass=HandlerMaker):
         self.settings = settings
         self._level = 0 # Remember last state
 
+        instance = int(settings['instance'].split(':')[1])
+
         self.service = VeDbusService(
             "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus,
             register=False)
@@ -199,7 +204,7 @@ class PinHandler(object, metaclass=HandlerMaker):
         self.service.add_path('/Mgmt/ProcessName', __file__)
         self.service.add_path('/Mgmt/ProcessVersion', VERSION)
         self.service.add_path('/Mgmt/Connection', path)
-        self.service.add_path('/DeviceInstance', gpio)
+        self.service.add_path('/DeviceInstance', instance)
         self.service.add_path('/ProductId', self.product_id)
         self.service.add_path('/ProductName', self.product_name)
         self.service.add_path('/Connected', 1)
@@ -597,10 +602,14 @@ def main():
 
     for inp, pth in inputs.items():
         pin = InputPin(inp, pth)
+        pin.devid = os.path.basename(pth)
+        pin.devinstance = inp
         pins.append(pin)
 
     for pin in pins:
         inp = pin.name
+        devid = pin.devid or pin.name
+        inst = 'digitalinput:{}'.format(pin.devinstance or 10)
         supported_settings = {
             'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
@@ -609,6 +618,7 @@ def main():
             'invertalarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
             'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
             'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
+            'instance': ['/Settings/Devices/{}/ClassAndVrmInstance'.format(devid), inst, '', ''],
         }
         bus = dbusconnection()
         sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, pin), timeout=10)
