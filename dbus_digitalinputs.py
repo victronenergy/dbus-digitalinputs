@@ -64,9 +64,10 @@ class InputPin():
     devid = None
     devinstance = None
 
-    def __init__(self, name=None, path=None):
+    def __init__(self, name=None, path=None, label=None):
         self.name = name
         self.path = path
+        self.label = label
 
 class BasePulseCounter(object):
     pass
@@ -530,6 +531,9 @@ def main():
 
     DBusGMainLoop(set_as_default=True)
 
+    ctlbus = dbusconnection()
+    ctlsvc = VeDbusService(args.servicebase + '.digitalinputs', bus=ctlbus)
+
     # Keep track of enabled services
     services = {}
     inputs = dict(enumerate(args.inputs, 1))
@@ -589,6 +593,8 @@ def main():
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
+
+            ctlsvc['/Devices/{}/Type'.format(inp)] = new
         elif setting in ('rate', 'invert', 'alarm', 'invertalarm'):
             services[inp].refresh()
         elif setting == 'name':
@@ -602,10 +608,16 @@ def main():
                 s.count = v
                 s.refresh()
 
+    def change_type(sd, path, val):
+        if not 0 <= val < len(INPUTTYPES):
+            return False
+        sd['inputtype'] = val
+        return True
+
     pins = []
 
     for inp, pth in inputs.items():
-        pin = InputPin(inp, pth)
+        pin = InputPin(inp, pth, 'Digital input {}'.format(inp))
         pin.devid = os.path.basename(pth)
         pin.devinstance = inp
         pins.append(pin)
@@ -627,6 +639,9 @@ def main():
         bus = dbusconnection()
         sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, pin), timeout=10)
         register_gpio(pin.path, inp, bus, sd)
+        ctlsvc.add_path('/Devices/{}/Label'.format(inp), pin.label)
+        ctlsvc.add_path('/Devices/{}/Type'.format(inp), sd['inputtype'],
+                        writeable=True, onchangecallback=partial(change_type, sd))
 
     def poll(mainloop):
         from time import time
