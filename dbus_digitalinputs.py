@@ -512,6 +512,29 @@ class GenericIO(PinAlarm):
 def dbusconnection():
     return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
 
+def parse_config(conf):
+    f = open(conf)
+
+    tag = None
+    pins = []
+
+    for line in f:
+        cmd, arg = line.strip().split(maxsplit=1)
+
+        if cmd == 'tag':
+            tag = arg
+            continue
+
+        if cmd == 'input':
+            pth, label = arg.split(maxsplit=1)
+            label = label.strip('"')
+            pin = InputPin(tag + '_' + os.path.basename(pth), pth, label)
+            pins.append(pin)
+            continue
+
+    f.close()
+
+    return pins
 
 def main():
     parser = ArgumentParser(description=sys.argv[0])
@@ -521,7 +544,8 @@ def main():
     parser.add_argument('--poll',
         help='Use a different kind of polling. Options are epoll, dumb and debug',
         default='epoll')
-    parser.add_argument('inputs', nargs='+', help='Path to digital input')
+    parser.add_argument('--conf', action='append', default=[], help='Config file')
+    parser.add_argument('inputs', nargs='*', help='Path to digital input')
     args = parser.parse_args()
 
     PulseCounter = {
@@ -621,6 +645,9 @@ def main():
         pin.devid = os.path.basename(pth)
         pin.devinstance = inp
         pins.append(pin)
+
+    for conf in args.conf:
+        pins += parse_config(conf)
 
     for pin in pins:
         inp = pin.name
