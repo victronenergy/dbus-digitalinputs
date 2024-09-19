@@ -186,7 +186,8 @@ class PinHandler(object, metaclass=HandlerMaker):
         self._level = 0 # Remember last state
 
         self.service = VeDbusService(
-            "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus)
+            "{}.{}.input{:02d}".format(base, self.dbus_name, gpio), bus=bus,
+            register=False)
 
         # Add objects required by ve-api
         self.service.add_path('/Mgmt/ProcessName', __file__)
@@ -209,6 +210,9 @@ class PinHandler(object, metaclass=HandlerMaker):
 
         # We'll count the pulses for all types of services
         self.service.add_path('/Count', value=settings['count'])
+
+        # Register our name on dbus
+        self.service.register()
 
     @property
     def product_name(self):
