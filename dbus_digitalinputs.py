@@ -397,13 +397,15 @@ class PinAlarm(PinHandler):
             (level ^ self.settings['invertalarm']) and self.settings['alarm'])
 
 
-class Generator(PinAlarm):
+class Generator(NopPin, PinHandler):
     _product_name = "Generator"
     type_id = 9
     translation = 5 # running, stopped
+    startStopService = 'com.victronenergy.generator.startstop0'
 
-    def __init__(self, *args, **kwargs):
-        super(Generator, self).__init__(*args, **kwargs)
+    def __init__(self, bus, base, path, gpio, settings):
+        super(Generator, self).__init__(bus, base, path, gpio, settings)
+        self._gpio = gpio
         # Periodically rewrite the generator selection. The Multi may reset
         # causing this to be lost, or a race condition on startup may cause
         # it to not be set properly.
@@ -416,7 +418,15 @@ class Generator(PinAlarm):
             services = [n for n in self.bus.list_names() if n.startswith(
                 'com.victronenergy.vebus.')]
             for n in services:
-                self.bus.call_async(n, '/Ac/Control/RemoteGeneratorSelected', None,
+                self.bus.call_async(n, '/Ac/Control/RemoteGeneratorSelected', 'com.victronenergy.BusItem',
+                    'SetValue', 'v', [v], None, None)
+        except dbus.exceptions.DBusException:
+            print ("DBus exception setting RemoteGeneratorSelected")
+            traceback.print_exc()
+        try:
+            self.bus.call_async(self.startStopService, '/DigitalInput/Input', 'com.victronenergy.BusItem',
+                    'SetValue', 'v', [self._gpio], None, None)
+            self.bus.call_async(self.startStopService, '/DigitalInput/Running', 'com.victronenergy.BusItem',
                     'SetValue', 'v', [v], None, None)
         except dbus.exceptions.DBusException:
             print ("DBus exception setting RemoteGeneratorSelected")
@@ -432,7 +442,11 @@ class Generator(PinAlarm):
         super(Generator, self).deactivate()
         # When deactivating, reset the generator selection state
         self.select_generator(0)
-
+        try:
+            self.bus.call_async(self.startStopService, '/DigitalInput/Input', 'com.victronenergy.BusItem',
+                    'SetValue', 'v', [0], None, None)
+        except dbus.exceptions.DBusException:
+            pass
         # And kill the periodic job
         GLib.source_remove(self._timer)
         self._timer = None
@@ -521,8 +535,9 @@ def main():
 
     def unregister_gpio(gpio):
         print ("unRegistering GPIO {}".format(gpio))
-        pulses.unregister(gpio)
-        services[gpio].deactivate()
+        if pulses.registered(gpio):
+            pulses.unregister(gpio)
+            services[gpio].deactivate()
 
     def handle_setting_change(inp, setting, old, new):
         # This handler may also be called if some attribute of a setting
@@ -539,6 +554,12 @@ def main():
                 # Input enabled. If already enabled, unregister the old one first.
                 if pulses.registered(inp):
                     unregister_gpio(inp)
+
+                # We only want 1 generator input at a time, so disable other inputs configured as generator.
+                for i in inputs:
+                    if i != inp and services[i].settings['inputtype'] == new:
+                        services[i].settings['inputtype'] = 0
+                        unregister_gpio(i)
 
                 # Before registering the new input, reset its settings to defaults
                 settings['count'] = 0
