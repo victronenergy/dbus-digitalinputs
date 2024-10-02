@@ -628,7 +628,7 @@ def main():
             # if it has changed.
             v = int(new)
             s = services[inp]
-            if s.count != v:
+            if s.active and s.count != v:
                 s.count = v
                 s.refresh()
 
