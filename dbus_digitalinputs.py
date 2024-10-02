@@ -556,7 +556,7 @@ def main():
     DBusGMainLoop(set_as_default=True)
 
     ctlbus = dbusconnection()
-    ctlsvc = VeDbusService(args.servicebase + '.digitalinputs', bus=ctlbus)
+    ctlsvc = VeDbusService(args.servicebase + '.digitalinputs', bus=ctlbus, register=True)
 
     # Keep track of enabled services
     services = {}
