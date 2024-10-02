@@ -602,7 +602,7 @@ def main():
 
                 # We only want 1 generator input at a time, so disable other inputs configured as generator.
                 for i in inputs:
-                    if i != inp and services[i].settings['inputtype'] == new:
+                    if i != inp and services[i].settings['inputtype'] == 9 == new:
                         services[i].settings['inputtype'] = 0
                         unregister_gpio(i)
 
