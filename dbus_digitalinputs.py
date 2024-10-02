@@ -397,7 +397,7 @@ class PinAlarm(PinHandler):
             (level ^ self.settings['invertalarm']) and self.settings['alarm'])
 
 
-class Generator(NopPin, PinHandler):
+class Generator(PinAlarm):
     _product_name = "Generator"
     type_id = 9
     translation = 5 # running, stopped
