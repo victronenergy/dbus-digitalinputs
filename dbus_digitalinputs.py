@@ -41,6 +41,16 @@ INPUTTYPES = [
     'Touch enable',
 ]
 
+RELAYTYPES = [
+    'Disabled',
+    'Alarm',
+    'Genset start stop',
+    'Manual',
+    'Tank pump',
+    'Temperature',
+    'Connected genset helper relay',
+]
+
 # Translations. The text will be used only for GetText, it will be translated
 # in the gui.
 TRANSLATIONS = [
@@ -61,6 +71,17 @@ class SessionBus(dbus.bus.BusConnection):
         return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
 
 class InputPin():
+    gpio_type = 'digitalinput'
+    devid = None
+    devinstance = None
+
+    def __init__(self, name=None, path=None, label=None):
+        self.name = name
+        self.path = path
+        self.label = label
+
+class Relay():
+    gpio_type = 'relay'
     devid = None
     devinstance = None
 
@@ -183,15 +204,16 @@ class HandlerMaker(type):
     def __init__(cls, name, bases, attrs):
         if not hasattr(cls, 'handlers'):
             cls.handlers = {}
+            cls.handlers[0] = {}    # Inputhandlers
+            cls.handlers[1] = {}    # Relayhandlers
         else:
-            cls.handlers[cls.type_id] = cls
+            cls.handlers[cls.handler_id][cls.type_id] = cls
 
-class PinHandler(object, metaclass=HandlerMaker):
+class IoHandler(object, metaclass=HandlerMaker):
     product_id = 0xFFFF
-    _product_name = 'Generic GPIO'
-    dbus_name = "digital"
     def __init__(self, bus, base, path, gpio, settings):
         self.bus = bus
+        self.path = path
         self.settings = settings
         self._level = 0 # Remember last state
 
@@ -224,9 +246,6 @@ class PinHandler(object, metaclass=HandlerMaker):
         self.service.add_path('/CustomName', settings['name'], writeable=True,
             onchangecallback=_change_name)
 
-        # We'll count the pulses for all types of services
-        self.service.add_path('/Count', value=settings['count'])
-
         # Register our name on dbus
         self.service.register()
 
@@ -255,6 +274,9 @@ class PinHandler(object, metaclass=HandlerMaker):
     def level(self, l):
         self._level = int(bool(l))
 
+    def save_count(self):
+        pass
+
     def toggle(self, level):
         raise NotImplementedError
 
@@ -269,13 +291,30 @@ class PinHandler(object, metaclass=HandlerMaker):
             are changed so the Service can recalculate paths. """
         self.toggle(self._level)
 
-    def save_count(self):
-        if self.service is not None:
-            self.settings['count'] = self.count
-
     @property
     def active(self):
         return self.service is not None
+
+    @classmethod
+    def createHandler(cls, _handler_id, _type, *args, **kwargs):
+        if _handler_id in cls.handlers and _type in cls.handlers[_handler_id]:
+            return cls.handlers[_handler_id][_type](*args, **kwargs)
+        return None
+
+class PinHandler(IoHandler):
+    _product_name = 'Generic GPIO'
+    dbus_name = "digital"
+    handler_id = 0
+    type_id = 0
+    def __init__(self, bus, base, path, gpio, settings):
+        super(PinHandler, self).__init__(bus, base, path, gpio, settings)
+
+        # We'll count the pulses for all types of services
+        self.service.add_path('/Count', value=settings['count'])
+
+    def save_count(self):
+        if self.service is not None:
+            self.settings['count'] = self.count
 
     @property
     def count(self):
@@ -285,11 +324,38 @@ class PinHandler(object, metaclass=HandlerMaker):
     def count(self, v):
         self.service['/Count'] = v
 
-    @classmethod
-    def createHandler(cls, _type, *args, **kwargs):
-        if _type in cls.handlers:
-            return cls.handlers[_type](*args, **kwargs)
-        return None
+class RelayHandler(IoHandler):
+    _product_name = 'Relay'
+    dbus_name = "relay"
+    handler_id = 1
+    type_id = 0
+    def __init__(self, bus, base, path, gpio, settings):
+        super(RelayHandler, self).__init__(bus, base, path, gpio, settings)
+
+        self.service.add_path('/State', value=0, writeable=True, onchangecallback=self._on_relay_state_changed)
+
+    # Keep state in sync when changed from kernel
+    def toggle(self, level):
+        if self._level != level:
+            self.service['/State'] = level
+            self._level = level
+
+    def _on_relay_state_changed(self, dbus_path, value):
+        if value not in (0, 1):
+            return False
+
+        state = int(bool(value))
+        try:
+            with open(self.path + '/value', 'wt') as w:
+                w.write(str(state))
+        except IOError:
+            traceback.print_exc()
+            return False
+
+        # Remember the state to restore after a restart
+        self.settings['state'] = state
+        self._level = state
+        return True
 
 
 class NopPin(object):
@@ -508,6 +574,41 @@ class GenericIO(PinAlarm):
     type_id = 10
     translation = 0 # low, high
 
+class DisabledRelay(NopPin, RelayHandler):
+    """ Place holder for a disabled relay. """
+    _product_name = 'Disabled'
+    type_id = 0
+
+class AlarmRelay(RelayHandler):
+    _product_name = "Alarm relay"
+    dbus_name = "alarmrelay"
+    type_id = 1
+
+class GensetStartStopRelay(RelayHandler):
+    _product_name = "Genset start/stop relay"
+    dbus_name = "gensetstartstoprelay"
+    type_id = 2
+
+class ManualRelay(RelayHandler):
+    _product_name = "Manual relay"
+    dbus_name = "relay"
+    type_id = 3
+
+class TankPumpRelay(RelayHandler):
+    _product_name = "Tank pump relay"
+    dbus_name = "tankpumprelay"
+    type_id = 4
+
+class TemperatureRelay(RelayHandler):
+    _product_name = "Temperature relay"
+    dbus_name = "temperaturerelay"
+    type_id = 5
+
+class ConnectedGensetHelperRelay(RelayHandler):
+    _product_name = "Connected genset helper relay"
+    dbus_name = "connectedgensethelperrelay"
+    type_id = 6
+
 
 def dbusconnection():
     return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
@@ -532,6 +633,13 @@ def parse_config(conf):
             pins.append(pin)
             continue
 
+        if cmd == 'relay':
+            pth, label = arg.split(maxsplit=1)
+            label = label.strip('"')
+            pin = Relay(tag + '_' + os.path.basename(pth), pth, label)
+            pins.append(pin)
+            continue
+
     f.close()
 
     return pins
@@ -545,7 +653,8 @@ def main():
         help='Use a different kind of polling. Options are epoll, dumb and debug',
         default='epoll')
     parser.add_argument('--conf', action='append', default=[], help='Config file')
-    parser.add_argument('inputs', nargs='*', help='Path to digital input')
+    parser.add_argument('--inputs', nargs='*', help='Path to digital input')
+    parser.add_argument('--relays', nargs='*', help='Path to relays')
     args = parser.parse_args()
 
     PulseCounter = {
@@ -561,14 +670,20 @@ def main():
     # Keep track of enabled services
     services = {}
     inputs = dict(enumerate(args.inputs, 1))
+    relay_paths = dict(enumerate(args.relays, 1))
     pulses = PulseCounter() # callable that iterates over pulses
 
-    def register_gpio(path, gpio, bus, settings):
-        _type = settings['inputtype']
-        print ("Registering GPIO {} for type {}".format(gpio, _type))
+    def register_gpio(io_type, path, gpio, bus, settings):
+        _type = settings['type']
+        print ("Registering {} {} for type {}".format(io_type, gpio, _type))
 
-        handler = PinHandler.createHandler(_type,
-            bus, args.servicebase, path, gpio, settings)
+        if io_type == 'digitalinput':
+            handler = IoHandler.createHandler(0, _type,
+                bus, args.servicebase, path, gpio, settings)
+        else:
+            handler = RelayHandler.createHandler(1, _type,
+                bus, args.servicebase, path, gpio, settings)
+
         services[gpio] = handler
 
         # Only monitor if enabled
@@ -582,7 +697,7 @@ def main():
             pulses.unregister(gpio)
             services[gpio].deactivate()
 
-    def handle_setting_change(pin, setting, old, new):
+    def handle_setting_change(io_type, pin, setting, old, new):
         # This handler may also be called if some attribute of a setting
         # is changed, but not the value. Bail if the value is unchanged.
         if old == new:
@@ -590,7 +705,7 @@ def main():
 
         inp = pin.name
 
-        if setting == 'inputtype':
+        if setting == 'type':
             if new:
                 # Get current bus and settings objects, to be reused
                 service = services[inp]
@@ -602,23 +717,24 @@ def main():
 
                 # We only want 1 generator input at a time, so disable other inputs configured as generator.
                 for i in inputs:
-                    if i != inp and services[i].settings['inputtype'] == 9 == new:
-                        services[i].settings['inputtype'] = 0
+                    if i != inp and services[i].settings['type'] == 9 == new:
+                        services[i].settings['type'] = 0
                         unregister_gpio(i)
 
-                # Before registering the new input, reset its settings to defaults
-                settings['count'] = 0
-                settings['invert'] = 0
-                settings['invertalarm'] = 0
-                settings['alarm'] = 0
+                if io_type == 'digitalinput':
+                    # Before registering the new input, reset its settings to defaults
+                    settings['count'] = 0
+                    settings['invert'] = 0
+                    settings['invertalarm'] = 0
+                    settings['alarm'] = 0
 
                 # Register it
-                register_gpio(pin.path, inp, bus, settings)
+                register_gpio(io_type, pin.path, inp, bus, settings)
             elif old:
                 # Input disabled
                 unregister_gpio(inp)
 
-            ctlsvc['/Devices/{}/Type'.format(inp)] = new
+            ctlsvc['/Devices/{}/{}/Label'.format(io_type, inp)] = new
         elif setting in ('rate', 'invert', 'alarm', 'invertalarm'):
             services[inp].refresh()
         elif setting == 'name':
@@ -632,11 +748,17 @@ def main():
                 s.count = v
                 s.refresh()
 
-    def change_type(sd, path, val):
-        if not 0 <= val < len(INPUTTYPES):
-            return False
-        sd['inputtype'] = val
-        return True
+    def change_type(io_type, sd, path, val):
+        if io_type == 'digitalinput':
+            if not 0 <= val < len(INPUTTYPES):
+                return False
+            sd['type'] = val
+            return True
+        elif io_type == 'relay':
+            if not 0 <= val < len(RELAYTYPES):
+                return False
+            sd['type'] = val
+            return True
 
     pins = []
 
@@ -646,29 +768,45 @@ def main():
         pin.devinstance = inp
         pins.append(pin)
 
+    for inp, pth in relay_paths.items():
+        relay = Relay(inp, pth, 'Relay {}'.format(inp))
+        relay.devid = os.path.basename(pth)
+        relay.devinstance = inp
+        pins.append(relay)
+
     for conf in args.conf:
         pins += parse_config(conf)
 
     for pin in pins:
+        io_type = pin.gpio_type
+        s_name = 'DigitalInput' if io_type == 'digitalinput' else 'Relay'
+        default_type = 0 if io_type == 'digitalinput' else 10
         inp = pin.name
         devid = pin.devid or pin.name
-        inst = 'digitalinput:{}'.format(pin.devinstance or 10)
+        inst = '{}:{}'.format(io_type, pin.devinstance or 10)
         supported_settings = {
-            'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
-            'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
-            'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
-            'invertalarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
-            'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
-            'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
+            'type': ['/Settings/{}/{}/Type'.format(s_name, inp), default_type, 0, len(INPUTTYPES)-1],
+            'rate': ['/Settings/{}/{}/Multiplier'.format(s_name, inp), 0.001, 0, 1.0],
+            'name': ['/Settings/{}/{}/CustomName'.format(s_name, inp), '', '', ''],
             'instance': ['/Settings/Devices/{}/ClassAndVrmInstance'.format(devid), inst, '', ''],
         }
+        if io_type == 'digitalinput':
+            supported_settings.update({
+                'count': ['/Settings/{}/{}/Count'.format(s_name, inp), 0, 0, MAXCOUNT, 1],
+                'invert': ['/Settings/{}/{}/InvertTranslation'.format(s_name, inp), 0, 0, 1],
+                'invertalarm': ['/Settings/{}/{}/InvertAlarm'.format(s_name, inp), 0, 0, 1],
+                'alarm': ['/Settings/{}/{}/AlarmSetting'.format(s_name, inp), 0, 0, 1],
+            })
+        elif io_type == 'relay':
+            supported_settings.update({
+                'state': ['/Settings/{}/{}/State'.format(s_name, inp), 0, 0, 1]
+            })
         bus = dbusconnection()
-        sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, pin), timeout=10)
-        register_gpio(pin.path, inp, bus, sd)
-        ctlsvc.add_path('/Devices/{}/Label'.format(inp), pin.label)
-        ctlsvc.add_path('/Devices/{}/Type'.format(inp), sd['inputtype'],
-                        writeable=True, onchangecallback=partial(change_type, sd))
+        sd = SettingsDevice(bus, supported_settings, partial(handle_setting_change, io_type, pin), timeout=10)
+        register_gpio(io_type, pin.path, inp, bus, sd)
+        ctlsvc.add_path('/Devices/{}/{}/Label'.format(io_type, inp), pin.label)
+        ctlsvc.add_path('/Devices/{}/{}/Type'.format(io_type, inp), sd['type'],
+                        writeable=True, onchangecallback=partial(change_type, io_type, sd))
 
     def poll(mainloop):
         from time import time
