@@ -527,7 +527,7 @@ def parse_config(conf):
 
         if cmd == 'input':
             pth, label = arg.split(maxsplit=1)
-            label = label.strip('"')
+            label = "GX IO ext. {} - Digital input {}".format(tag, label.strip('"'))
             pin = InputPin(tag + '_' + os.path.basename(pth), pth, label)
             pins.append(pin)
             continue
@@ -641,7 +641,7 @@ def main():
     pins = []
 
     for inp, pth in inputs.items():
-        pin = InputPin(inp, pth, 'Digital input {}'.format(inp))
+        pin = InputPin(inp, pth, 'GX Built-in - Digital input {}'.format(inp))
         pin.devid = os.path.basename(pth)
         pin.devinstance = inp
         pins.append(pin)
