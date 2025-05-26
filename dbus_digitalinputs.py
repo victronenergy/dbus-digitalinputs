@@ -630,6 +630,7 @@ def main():
         elif setting == 'rate':
             services[inp].refresh()
         elif setting in ('InvertTranslation', 'AlarmSetting', 'InvertAlarm'):
+            services[inp].service[f'/Settings/{setting}'] = new
             services[inp].refresh()
         elif setting == 'name':
             services[inp].product_name = new
