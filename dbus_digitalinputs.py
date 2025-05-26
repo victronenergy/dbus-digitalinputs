@@ -215,14 +215,22 @@ class PinHandler(object, metaclass=HandlerMaker):
         self.service.add_path('/Connected', 1)
 
         # Custom name setting
-        def _change_name(p, v):
+        def _change_setting(s, p, v):
             # This should fire a change event that will update product_name
             # below.
-            settings['name'] = v
+            settings[s] = v
             return True
 
         self.service.add_path('/CustomName', settings['name'], writeable=True,
-            onchangecallback=_change_name)
+            onchangecallback=partial(_change_setting, 'name'))
+
+        # Expose some settings on the service itself
+        self.service.add_path('/Settings/AlarmSetting', settings['alarm'],
+            writeable=True, onchangecallback=partial(_change_setting, 'alarm'))
+        self.service.add_path('/Settings/InvertTranslation', settings['invert'],
+            writeable=True, onchangecallback=partial(_change_setting, 'invert'))
+        self.service.add_path('/Settings/InvertAlarm', settings['invertalarm'],
+            writeable=True, onchangecallback=partial(_change_setting, 'invertalarm'))
 
         # We'll count the pulses for all types of services
         self.service.add_path('/Count', value=settings['count'])
