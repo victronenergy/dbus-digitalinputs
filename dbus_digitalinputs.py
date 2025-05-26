@@ -225,12 +225,12 @@ class PinHandler(object, metaclass=HandlerMaker):
             onchangecallback=partial(_change_setting, 'name'))
 
         # Expose some settings on the service itself
-        self.service.add_path('/Settings/AlarmSetting', settings['alarm'],
-            writeable=True, onchangecallback=partial(_change_setting, 'alarm'))
-        self.service.add_path('/Settings/InvertTranslation', settings['invert'],
-            writeable=True, onchangecallback=partial(_change_setting, 'invert'))
-        self.service.add_path('/Settings/InvertAlarm', settings['invertalarm'],
-            writeable=True, onchangecallback=partial(_change_setting, 'invertalarm'))
+        self.service.add_path('/Settings/AlarmSetting', settings['AlarmSetting'],
+            writeable=True, onchangecallback=partial(_change_setting, 'AlarmSetting'))
+        self.service.add_path('/Settings/InvertTranslation', settings['InvertTranslation'],
+            writeable=True, onchangecallback=partial(_change_setting, 'InvertTranslation'))
+        self.service.add_path('/Settings/InvertAlarm', settings['InvertAlarm'],
+            writeable=True, onchangecallback=partial(_change_setting, 'InvertAlarm'))
 
         # We'll count the pulses for all types of services
         self.service.add_path('/Count', value=settings['count'])
@@ -413,12 +413,12 @@ class PinAlarm(PinHandler):
             s['/Alarm'] = self.get_alarm_state(level)
 
     def get_state(self, level):
-        state = level ^ self.settings['invert']
+        state = level ^ self.settings['InvertTranslation']
         return 2 * self.translation + state
 
     def get_alarm_state(self, level):
         return 2 * bool(
-            (level ^ self.settings['invertalarm']) and self.settings['alarm'])
+            (level ^ self.settings['InvertAlarm']) and self.settings['AlarmSetting'])
 
 
 class Generator(PinAlarm):
@@ -434,7 +434,7 @@ class Generator(PinAlarm):
         # causing this to be lost, or a race condition on startup may cause
         # it to not be set properly.
         self._timer = GLib.timeout_add(30000,
-            lambda: self.select_generator(self.level ^ self.settings['invert'] ^ 1) or True)
+            lambda: self.select_generator(self.level ^ self.settings['InvertTranslation'] ^ 1) or True)
 
     def select_generator(self, v):
         # Find all vebus services, and let them know
@@ -460,7 +460,7 @@ class Generator(PinAlarm):
         super(Generator, self).toggle(level)
 
         # Follow the same inversion sense as for display
-        self.select_generator(level ^ self.settings['invert'] ^ 1)
+        self.select_generator(level ^ self.settings['InvertTranslation'] ^ 1)
 
     def deactivate(self):
         super(Generator, self).deactivate()
@@ -616,9 +616,9 @@ def main():
 
                 # Before registering the new input, reset its settings to defaults
                 settings['count'] = 0
-                settings['invert'] = 0
-                settings['invertalarm'] = 0
-                settings['alarm'] = 0
+                settings['InvertTranslation'] = 0
+                settings['InvertAlarm'] = 0
+                settings['AlarmSetting'] = 0
 
                 # Register it
                 register_gpio(pin.path, inp, bus, settings)
@@ -627,7 +627,9 @@ def main():
                 unregister_gpio(inp)
 
             ctlsvc['/Devices/{}/Type'.format(inp)] = new
-        elif setting in ('rate', 'invert', 'alarm', 'invertalarm'):
+        elif setting == 'rate':
+            services[inp].refresh()
+        elif setting in ('InvertTranslation', 'AlarmSetting', 'InvertAlarm'):
             services[inp].refresh()
         elif setting == 'name':
             services[inp].product_name = new
@@ -665,9 +667,9 @@ def main():
             'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
             'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
-            'invert': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
-            'invertalarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
-            'alarm': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
+            'InvertTranslation': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
+            'InvertAlarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
+            'AlarmSetting': ['/Settings/DigitalInput/{}/AlarmSetting'.format(inp), 0, 0, 1],
             'name': ['/Settings/DigitalInput/{}/CustomName'.format(inp), '', '', ''],
             'instance': ['/Settings/Devices/{}/ClassAndVrmInstance'.format(devid), inst, '', ''],
         }
