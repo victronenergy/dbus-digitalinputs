@@ -348,9 +348,15 @@ class VolumeCounter(PinHandler):
         self.service.add_path('/Aggregate', value=self.count*self.rate,
             gettextcallback=lambda p, v: (str(v) + ' cubic meter'))
 
+        def _change_multiplier(p, v):
+            settings['Multiplier'] = v
+            return True
+        self.service.add_path('/Settings/Multiplier', settings['Multiplier'],
+            writeable=True, onchangecallback=_change_multiplier)
+
     @property
     def rate(self):
-        return self.settings['rate']
+        return self.settings['Multiplier']
 
     def toggle(self, level):
         with self.service as s:
@@ -627,10 +633,11 @@ def main():
                 unregister_gpio(inp)
 
             ctlsvc['/Devices/{}/Type'.format(inp)] = new
-        elif setting == 'rate':
-            services[inp].refresh()
-        elif setting in ('InvertTranslation', 'AlarmSetting', 'InvertAlarm'):
-            services[inp].service[f'/Settings/{setting}'] = new
+        elif setting in ('InvertTranslation', 'AlarmSetting', 'InvertAlarm', 'Multiplier'):
+            try:
+                services[inp].service[f'/Settings/{setting}'] = new
+            except KeyError:
+                pass # Some settings are not on all services
             services[inp].refresh()
         elif setting == 'name':
             services[inp].product_name = new
@@ -666,7 +673,7 @@ def main():
         inst = 'digitalinput:{}'.format(pin.devinstance or 10)
         supported_settings = {
             'inputtype': ['/Settings/DigitalInput/{}/Type'.format(inp), 0, 0, len(INPUTTYPES)-1],
-            'rate': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
+            'Multiplier': ['/Settings/DigitalInput/{}/Multiplier'.format(inp), 0.001, 0, 1.0],
             'count': ['/Settings/DigitalInput/{}/Count'.format(inp), 0, 0, MAXCOUNT, 1],
             'InvertTranslation': ['/Settings/DigitalInput/{}/InvertTranslation'.format(inp), 0, 0, 1],
             'InvertAlarm': ['/Settings/DigitalInput/{}/InvertAlarm'.format(inp), 0, 0, 1],
