@@ -233,7 +233,8 @@ class PinHandler(object, metaclass=HandlerMaker):
             writeable=True, onchangecallback=partial(_change_setting, 'InvertAlarm'))
 
         # We'll count the pulses for all types of services
-        self.service.add_path('/Count', value=settings['count'])
+        self.service.add_path('/Count', value=settings['count'],
+            writeable=True, onchangecallback=partial(_change_setting, 'count'))
 
         # Register our name on dbus
         self.service.register()
