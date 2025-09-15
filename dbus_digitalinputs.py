@@ -571,7 +571,7 @@ def main():
     DBusGMainLoop(set_as_default=True)
 
     ctlbus = dbusconnection()
-    ctlsvc = VeDbusService(args.servicebase + '.digitalinputs', bus=ctlbus, register=True)
+    ctlsvc = VeDbusService(args.servicebase + '.digitalinputs', bus=ctlbus, register=False)
 
     # Keep track of enabled services
     services = {}
@@ -722,6 +722,8 @@ def main():
 
     # Save counter on shutdown
     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
+
+    ctlsvc.register()
 
     try:
         mainloop.run()
