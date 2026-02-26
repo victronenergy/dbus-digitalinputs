@@ -219,6 +219,8 @@ class PinHandler(object, metaclass=HandlerMaker):
             # This should fire a change event that will update product_name
             # below.
             settings[s] = v
+            if s == 'count':
+                self.apply_count_setting(v)
             return True
 
         self.service.add_path('/CustomName', settings['name'], writeable=True,
@@ -277,6 +279,12 @@ class PinHandler(object, metaclass=HandlerMaker):
         """ Toggle state to last remembered state. This is called if settings
             are changed so the Service can recalculate paths. """
         self.toggle(self._level)
+
+    def apply_count_setting(self, v):
+        v = int(v)
+        if self.active and self.count != v:
+            self.count = v
+            self.refresh()
 
     def save_count(self):
         if self.service is not None:
@@ -645,11 +653,7 @@ def main():
         elif setting == 'count':
             # Don't want this triggered on a period save, so only execute
             # if it has changed.
-            v = int(new)
-            s = services[inp]
-            if s.active and s.count != v:
-                s.count = v
-                s.refresh()
+            services[inp].apply_count_setting(new)
 
     def change_type(sd, path, val):
         if not 0 <= val < len(INPUTTYPES):
