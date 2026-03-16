@@ -36,9 +36,10 @@ INPUTTYPES = [
     'Smoke alarm',
     'Fire alarm',
     'CO2 alarm',
-    'Generator',
+    'Generator Status',
     'Generic I/O',
     'Touch enable',
+    'Generator inhibit run',
 ]
 
 # Translations. The text will be used only for GetText, it will be translated
@@ -49,7 +50,8 @@ TRANSLATIONS = [
     Translation('no', 'yes'),
     Translation('open', 'closed'),
     Translation('ok', 'alarm'),
-    Translation('running', 'stopped')
+    Translation('running', 'stopped'),
+    Translation('enabled', 'disabled'),
 ]
 
 class SystemBus(dbus.bus.BusConnection):
@@ -437,7 +439,7 @@ class PinAlarm(PinHandler):
 
 
 class Generator(PinAlarm):
-    _product_name = "Generator"
+    _product_name = "Generator Status"
     type_id = 9
     translation = 5 # running, stopped
     startStopService = 'com.victronenergy.generator.startstop0'
@@ -531,6 +533,14 @@ class GenericIO(PinAlarm):
     type_id = 10
     translation = 0 # low, high
 
+class GeneratorInhibitRun(PinAlarm):
+    _product_name = "Generator inhibit run"
+    type_id = 12
+    translation = 6 # enabled, disabled
+    allow_invert_translation = False
+
+    def toggle(self, level):
+        super(GeneratorInhibitRun, self).toggle(level)
 
 def dbusconnection():
     return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
@@ -623,9 +633,10 @@ def main():
                 if pulses.registered(inp):
                     unregister_gpio(inp)
 
-                # We only want 1 generator input at a time, so disable other inputs configured as generator.
+                # We only want 1 generator-related control input of each type
+                # at a time, so disable other inputs configured as the same type.
                 for i in inputs:
-                    if i != inp and services[i].settings['inputtype'] == 9 == new:
+                    if i != inp and new in (9, 12) and services[i].settings['inputtype'] == new:
                         services[i].settings['inputtype'] = 0
                         unregister_gpio(i)
 
