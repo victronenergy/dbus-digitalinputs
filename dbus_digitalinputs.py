@@ -705,6 +705,17 @@ def main():
         ctlsvc.add_path('/Devices/{}/Type'.format(inp), sd['inputtype'],
                         writeable=True, onchangecallback=partial(change_type, sd))
 
+    # Enforce constraint: only one input of each generator-related type (9, 12)
+    # IO extender pins (added last) take priority over built-in pins
+    for restricted_type in (9, 12):
+        type_pins = [inp for inp in services if services[inp].settings['inputtype'] == restricted_type]
+        if len(type_pins) > 1:
+            # Keep the last one (IO extender), disable the others (built-in)
+            # to Kepp the inbuilt use type_pins[1:]:
+            for inp in type_pins[:-1]:
+                services[inp].settings['inputtype'] = 0
+                unregister_gpio(inp)
+
     def poll(mainloop):
         from time import time
         idx = 0
