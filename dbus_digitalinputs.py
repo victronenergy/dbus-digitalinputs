@@ -635,7 +635,8 @@ def main():
 
                 # We only want 1 generator-related control input of each type
                 # at a time, so disable other inputs configured as the same type.
-                for i in inputs:
+                # Iterate over services (not inputs) so extender pins are included.
+                for i in list(services):
                     if i != inp and new in (9, 12) and services[i].settings['inputtype'] == new:
                         services[i].settings['inputtype'] = 0
                         unregister_gpio(i)
