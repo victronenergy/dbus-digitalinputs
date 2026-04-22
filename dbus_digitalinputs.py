@@ -192,6 +192,9 @@ class PinHandler(object, metaclass=HandlerMaker):
     product_id = 0xFFFF
     _product_name = 'Generic GPIO'
     dbus_name = "digital"
+    allow_invert_translation = True
+    allow_invert_alarm = True
+
     def __init__(self, bus, base, path, gpio, settings):
         self.bus = bus
         self.settings = settings
@@ -231,10 +234,24 @@ class PinHandler(object, metaclass=HandlerMaker):
         # Expose some settings on the service itself
         self.service.add_path('/Settings/AlarmSetting', settings['AlarmSetting'],
             writeable=True, onchangecallback=partial(_change_setting, 'AlarmSetting'))
+
+        def _change_invert_translation(path, value):
+            if not self.allow_invert_translation:
+                return False
+            return _change_setting('InvertTranslation', path, value)
+
         self.service.add_path('/Settings/InvertTranslation', settings['InvertTranslation'],
-            writeable=True, onchangecallback=partial(_change_setting, 'InvertTranslation'))
+            writeable=self.allow_invert_translation,
+            onchangecallback=_change_invert_translation)
+
+        def _change_invert_alarm(path, value):
+            if not self.allow_invert_alarm:
+                return False
+            return _change_setting('InvertAlarm', path, value)
+
         self.service.add_path('/Settings/InvertAlarm', settings['InvertAlarm'],
-            writeable=True, onchangecallback=partial(_change_setting, 'InvertAlarm'))
+            writeable=self.allow_invert_alarm,
+            onchangecallback=_change_invert_alarm)
 
         # We'll count the pulses for all types of services
         self.service.add_path('/Count', value=settings['count'],
@@ -429,13 +446,19 @@ class PinAlarm(PinHandler):
             # disappears.
             s['/Alarm'] = self.get_alarm_state(level)
 
+    def get_invert_translation(self):
+        return self.settings['InvertTranslation'] if self.allow_invert_translation else 0
+
+    def get_invert_alarm(self):
+        return self.settings['InvertAlarm'] if self.allow_invert_alarm else 0
+
     def get_state(self, level):
-        state = level ^ self.settings['InvertTranslation']
+        state = level ^ self.get_invert_translation()
         return 2 * self.translation + state
 
     def get_alarm_state(self, level):
         return 2 * bool(
-            (level ^ self.settings['InvertAlarm']) and self.settings['AlarmSetting'])
+            (level ^ self.get_invert_alarm()) and self.settings['AlarmSetting'])
 
 
 class Generator(PinAlarm):
@@ -451,7 +474,7 @@ class Generator(PinAlarm):
         # causing this to be lost, or a race condition on startup may cause
         # it to not be set properly.
         self._timer = GLib.timeout_add(30000,
-            lambda: self.select_generator(self.level ^ self.settings['InvertTranslation'] ^ 1) or True)
+            lambda: self.select_generator(self.level ^ self.get_invert_translation() ^ 1) or True)
 
     def select_generator(self, v):
         # Find all vebus services, and let them know
@@ -477,7 +500,7 @@ class Generator(PinAlarm):
         super(Generator, self).toggle(level)
 
         # Follow the same inversion sense as for display
-        self.select_generator(level ^ self.settings['InvertTranslation'] ^ 1)
+        self.select_generator(level ^ self.get_invert_translation() ^ 1)
 
     def deactivate(self):
         super(Generator, self).deactivate()
@@ -538,6 +561,7 @@ class GeneratorInhibitRun(PinAlarm):
     type_id = 12
     translation = 6 # enabled, disabled
     allow_invert_translation = False
+    allow_invert_alarm = False
 
     def toggle(self, level):
         super(GeneratorInhibitRun, self).toggle(level)
@@ -654,7 +678,27 @@ def main():
                 unregister_gpio(inp)
 
             ctlsvc['/Devices/{}/Type'.format(inp)] = new
-        elif setting in ('InvertTranslation', 'AlarmSetting', 'InvertAlarm', 'Multiplier'):
+        elif setting == 'InvertTranslation':
+            handler = services[inp]
+            if not handler.allow_invert_translation and new != 0:
+                handler.settings['InvertTranslation'] = 0
+                new = 0
+            try:
+                handler.service['/Settings/InvertTranslation'] = new
+            except KeyError:
+                pass
+            handler.refresh()
+        elif setting == 'InvertAlarm':
+            handler = services[inp]
+            if not handler.allow_invert_alarm and new != 0:
+                handler.settings['InvertAlarm'] = 0
+                new = 0
+            try:
+                handler.service['/Settings/InvertAlarm'] = new
+            except KeyError:
+                pass
+            handler.refresh()
+        elif setting in ('AlarmSetting', 'Multiplier'):
             try:
                 services[inp].service[f'/Settings/{setting}'] = new
             except KeyError:
