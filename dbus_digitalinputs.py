@@ -39,6 +39,7 @@ INPUTTYPES = [
     'Generator',
     'Generic I/O',
     'Touch enable',
+    'Surge protection alarm',
 ]
 
 # Translations. The text will be used only for GetText, it will be translated
@@ -530,6 +531,11 @@ class GenericIO(PinAlarm):
     _product_name = "Generic I/O"
     type_id = 10
     translation = 0 # low, high
+
+class SurgeProtectionMonitor(PinAlarm):
+    _product_name = "Surge protection alarm"
+    type_id = 12
+    translation = 4 # ok, alarm
 
 
 def dbusconnection():
